@@ -15,6 +15,7 @@ export function useAISStream(mapRef) {
   const shipMapRef = useRef(new Map()); // mmsi → feature (최신 위치 유지)
   const wsRef = useRef(null);
   const intervalRef = useRef(null);
+  const lastSaveRef = useRef(0); // localStorage 마지막 저장 시각
   const { setWsStatus, setShipCount } = useStore.getState();
 
   const loadCache = useCallback(async () => {
@@ -30,18 +31,28 @@ export function useAISStream(mapRef) {
     };
 
     // 1) localStorage 즉시 복원 (~0ms) — 지도 소스 준비되면 바로 렌더링
+    let cacheFresh = false;
     try {
       const raw = localStorage.getItem(LS_CACHE_KEY);
       if (raw) {
         const { ts, features } = JSON.parse(raw);
-        if (Date.now() - ts < LS_CACHE_TTL_MS && Array.isArray(features)) {
+        if (Date.now() - ts < LS_CACHE_TTL_MS && Array.isArray(features) && features.length) {
           features.forEach(f => shipMapRef.current.set(f.properties.mmsi, f));
           trySetData();
+          lastSaveRef.current = ts;
+          cacheFresh = true;
         }
       }
     } catch { /* localStorage 비활성화 또는 파싱 실패 무시 */ }
 
-    // 2) Supabase에서 최신 데이터 로드 (백그라운드)
+    // 캐시가 신선하면(10분 이내) Supabase 전체 재조회를 생략 —
+    // 이후 위치는 라이브 WebSocket이 갱신하고, flushBuffer가 캐시를 따뜻하게 유지
+    if (cacheFresh) {
+      console.log('[CACHE] fresh localStorage hit — Supabase 재조회 생략');
+      return;
+    }
+
+    // 2) Supabase에서 최신 데이터 로드 (캐시 없음/만료 시에만)
     const { data: ships } = await supabase
       .from('ships')
       .select('mmsi, ship_name, vessel_type, lat, lng, speed, heading, destination, flag_country, nav_status, eta')
@@ -84,7 +95,9 @@ export function useAISStream(mapRef) {
     // 3) localStorage 갱신 (다음 새로고침에서 즉시 사용)
     try {
       const features = Array.from(shipMapRef.current.values());
-      localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ ts: Date.now(), features }));
+      const now = Date.now();
+      localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ ts: now, features }));
+      lastSaveRef.current = now;
     } catch { /* 용량 초과 등 무시 */ }
   }, [mapRef, setShipCount]);
 
@@ -101,6 +114,15 @@ export function useAISStream(mapRef) {
     const features = Array.from(shipMapRef.current.values());
     source.setData({ type: 'FeatureCollection', features });
     setShipCount(features.length);
+
+    // 라이브 위치로 localStorage 캐시를 따뜻하게 유지 (최대 60초마다 1회)
+    const now = Date.now();
+    if (now - lastSaveRef.current > 60_000) {
+      lastSaveRef.current = now;
+      try {
+        localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ ts: now, features }));
+      } catch { /* 용량 초과 등 무시 */ }
+    }
   }, [mapRef, setShipCount]);
 
   const connect = useCallback(() => {

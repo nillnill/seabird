@@ -12,6 +12,7 @@
 |--------|------|
 | 프론트엔드 | Vite 6 + React 18 + Tailwind CSS v3 |
 | 상태관리 | Zustand 5 |
+| 차트 | Recharts 3 (통계 대시보드) |
 | 지도 | Mapbox GL JS v3 (dark-v11 스타일) |
 | AI | Claude API (서버에서 호출 — Haiku/Sonnet/Opus 티어화) |
 | DB / Realtime | Supabase (PostgreSQL + Realtime) |
@@ -75,10 +76,11 @@ seabird/
     │   ├── ReportModal.jsx    ← 상세 보기 모달
     │   ├── ShipDetailPanel.jsx ← 선박 클릭 상세 (Civ7 스타일 대형 모달, 캐릭터 헤더 + 3탭: 현황/화물추정/항적)
     │   ├── FeedFilter.jsx     ← 에이전트별 필터 토글
-    │   └── StatusBar.jsx      ← 상단 상태 표시줄
+    │   ├── StatusBar.jsx      ← 상단 상태 표시줄 (📊 통계 대시보드 토글 버튼)
+    │   └── StatsDashboard.jsx ← 통계 대시보드 모달 (Recharts, 8개 섹션)
     │
     ├── hooks/
-    │   ├── useAISStream.js    ← ws://localhost:3001/relay 연결 + Supabase 캐시 로드
+    │   ├── useAISStream.js    ← ws://localhost:3001/relay 연결 + localStorage 즉시 복원(10분 TTL) + Supabase 캐시 로드
     │   └── useAgentReports.js ← Supabase Realtime 구독 (에이전트 보고 수신)
     │
     ├── store/
@@ -212,6 +214,25 @@ xiamen, kaohsiung, laem_chabang, jakarta, colombo, savannah, hochiminhcity
 
 **우선순위**: fallback(브라우저)의 vessel_type이 non-Other이면 DB 값보다 우선 적용.
 
+**캐싱**: 동일 `(mmsi + destination + vessel_type)` 조합은 `agent_reports`(agent_id=`CARGO_ESTIMATOR`)에 12시간 TTL로 캐시. 캐시 히트 시 Claude 호출 없이 즉시 응답하며, 신규 추정은 백그라운드로 저장(응답 지연 없음).
+
+---
+
+## 통계 대시보드 (StatsDashboard.jsx)
+
+상단 StatusBar의 📊 통계 버튼으로 토글 (`useStore.showStatsDashboard` / `toggleStatsDashboard`). Recharts 기반 모달, 8개 섹션:
+
+1. **KPI 카드 4개** — 추적 선박 수 / CRITICAL 경보 수 / 최고 혼잡 항만 / 위험 초크포인트
+2. **선종 분포** — 도넛 차트 (MapFilter와 동일 색상)
+3. **기국 Top 10** — 가로 막대 (국기 이모지)
+4. **속력 분포** — 히스토그램 (정박·저속·항행·쾌속·고속)
+5. **항행 상태 분포** — 도넛 차트 (`nav_status` 기반)
+6. **초크포인트 통과량 vs 기준값** — 심각도별 색상 그룹 막대
+7. **에이전트 경보 타임라인** — 24시간 스택 막대 (CRITICAL/WARNING/INFO)
+8. **목적지 Top 15 + 선종 드릴다운** — 막대 클릭 시 해당 목적지의 선종 분포로 전환
+
+데이터 출처: 현재 선박은 store, 초크포인트·경보는 `agent_reports` Supabase 조회.
+
 ---
 
 ## 환경변수
@@ -310,6 +331,7 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 | 5 | GEOPOLITICAL LINKER + 서버 사이드 에이전트 이전 | ✅ 완료 |
 | 5+ | 30개 항만 확장 + 선종 분류 버그 수정 + RegionIntelPanel + 선박 상세 UI 개선 | ✅ 완료 |
 | 5++ | ShipDetailPanel Civ7 리디자인 + 선박·지역 캐릭터 45개 이미지 시스템 구축 | ✅ 완료 |
+| 5+++ | 통계 대시보드(Recharts 8섹션) + Cargo 캐시(12h) + localStorage 선박 캐시 | ✅ 완료 |
 | 6 | Vercel/Render 배포 | 🔲 진행 중 |
 | 6+ | 비교 수치 시스템 | 🔲 |
 | 7 | 버그픽스 + 데모 시나리오 준비 | 🔲 |
