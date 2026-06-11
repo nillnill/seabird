@@ -152,13 +152,18 @@ setInterval(async () => {
 
 // ── aisstream.io WebSocket 연결 ───────────────────────────────────────────────
 let aisWs = null;
+let lastAisMessageAt = 0;             // 마지막 AIS 메시지 수신 시각
+const AIS_STALE_MS = 60 * 1000;       // 60초간 무수신이면 좀비(half-open) 소켓으로 간주
+const AIS_WATCHDOG_INTERVAL_MS = 20 * 1000;
 
 function connectAIS() {
   console.log('[AIS] connecting to aisstream.io...');
+  lastAisMessageAt = Date.now();
   aisWs = new WebSocket('wss://stream.aisstream.io/v0/stream');
 
   aisWs.on('open', () => {
     console.log('[AIS] connected');
+    lastAisMessageAt = Date.now();
     aisWs.send(JSON.stringify({
       APIKey: process.env.AISSTREAM_API_KEY,
       MessageTypes: ['PositionReport', 'ShipStaticData'],
@@ -167,6 +172,7 @@ function connectAIS() {
   });
 
   aisWs.on('message', (data) => {
+    lastAisMessageAt = Date.now();
     const raw = data.toString();
     // 브라우저로 relay
     broadcast(raw);
@@ -208,6 +214,17 @@ function connectAIS() {
     setTimeout(connectAIS, 5000);
   });
 }
+
+// 유휴 감지 워치독 — half-open(좀비) 소켓은 'close'가 안 뜨므로 강제 재연결
+setInterval(() => {
+  if (!aisWs || aisWs.readyState !== WebSocket.OPEN) return;
+  const idle = Date.now() - lastAisMessageAt;
+  if (idle > AIS_STALE_MS) {
+    console.warn(`[AIS] no messages for ${Math.round(idle / 1000)}s — terminating stale socket`);
+    lastAisMessageAt = Date.now(); // 재연결 사이클 동안 중복 terminate 방지
+    aisWs.terminate();             // 'close' 핸들러가 5초 뒤 재연결
+  }
+}, AIS_WATCHDOG_INTERVAL_MS);
 
 connectAIS();
 
