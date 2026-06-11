@@ -251,6 +251,29 @@ app.post('/api/cargo-estimate', async (req, res) => {
 
     const vesselType = ship.vessel_type ?? 'Other';
 
+    // 캐시 조회 — 동일 (mmsi + destination + vessel_type) 12시간 TTL
+    const cacheKey = {
+      mmsi: String(mmsi),
+      destination: (ship.destination || '').toUpperCase().trim().slice(0, 10),
+      vessel_type: vesselType,
+    };
+    const cutoff = new Date(Date.now() - 12 * 3600_000).toISOString();
+    const { data: cacheHit } = await supabase
+      .from('agent_reports')
+      .select('raw_data, created_at')
+      .eq('agent_id', 'CARGO_ESTIMATOR')
+      .eq('raw_data->>mmsi', cacheKey.mmsi)
+      .eq('raw_data->>destination', cacheKey.destination)
+      .eq('raw_data->>vessel_type', cacheKey.vessel_type)
+      .gte('created_at', cutoff)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+    if (cacheHit?.raw_data?.cargo_result) {
+      console.log(`[CARGO_CACHE] hit — mmsi=${cacheKey.mmsi}`);
+      return res.json({ ...cacheHit.raw_data.cargo_result, _cached_at: cacheHit.created_at });
+    }
+
     const CARGO_SYSTEM_PROMPT = (() => {
       const JSON_BASE = 'Respond ONLY with valid JSON. Language: Korean. MANDATORY: Never refuse — always estimate.';
       switch (vesselType) {
@@ -307,6 +330,23 @@ Minimum viable: Even with only MMSI, infer flag country → typical exports → 
       }),
       maxTokens: 2000,
       model: 'claude-sonnet-4-6',
+    });
+
+    // 캐시 저장 (백그라운드 — 응답 지연 없음)
+    supabase.from('agent_reports').insert({
+      agent_id: 'CARGO_ESTIMATOR',
+      severity: 'INFO',
+      title: `${ship.ship_name || mmsi} 화물 추정`,
+      summary: (result.disclaimer || '화물 추정 완료').slice(0, 120),
+      detail: '',
+      data_points: [],
+      annotations: [],
+      related_mmsi: [String(mmsi)],
+      location: { lat: ship.lat, lng: ship.lng },
+      raw_data: { ...cacheKey, cargo_result: result },
+    }).then(({ error }) => {
+      if (error) console.error('[CARGO_CACHE] save error:', error.message);
+      else console.log(`[CARGO_CACHE] saved — mmsi=${cacheKey.mmsi}`);
     });
 
     res.json(result);

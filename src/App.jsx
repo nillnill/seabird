@@ -3,6 +3,7 @@ import CommandFeed from './components/CommandFeed.jsx';
 import StatusBar from './components/StatusBar.jsx';
 import ShipDetailPanel from './components/ShipDetailPanel.jsx';
 import RegionIntelPanel from './components/RegionIntelPanel.jsx';
+import StatsDashboard from './components/StatsDashboard.jsx';
 import useStore from './store/useStore.js';
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
         <CommandFeed />
       </div>
       {selectedRegion && <RegionIntelPanel />}
+      <StatsDashboard />
     </div>
   );
 }

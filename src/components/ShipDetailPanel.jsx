@@ -509,7 +509,17 @@ export default function ShipDetailPanel() {
           {/* ── 화물 추정 탭 ── */}
           {activeTab === 'cargo' && (
             <div className="p-4">
-              <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest mb-3">📦 화물 추정 (AI)</p>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">📦 화물 추정 (AI)</p>
+                {cargoResult?._cached_at && (
+                  <span className="text-[9px] text-white/25 font-mono">
+                    {new Date(cargoResult._cached_at).toLocaleString('ko-KR', {
+                      timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric',
+                      hour: '2-digit', minute: '2-digit',
+                    })} 추정
+                  </span>
+                )}
+              </div>
               {cargoLoading && (
                 <div className="flex flex-col items-center justify-center py-10 gap-3">
                   <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />

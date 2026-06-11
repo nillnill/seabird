@@ -60,6 +60,10 @@ const useStore = create((set) => ({
     set((state) => ({
       chokepointSeverities: { ...state.chokepointSeverities, [id]: severity },
     })),
+
+  // 통계 대시보드
+  showStatsDashboard: false,
+  toggleStatsDashboard: () => set((state) => ({ showStatsDashboard: !state.showStatsDashboard })),
 }));
 
 export default useStore;

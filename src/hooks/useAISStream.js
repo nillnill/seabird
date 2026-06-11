@@ -4,6 +4,8 @@ import { mapAISTypeToCategory, mmsiToFlag } from '../utils/aisParser.js';
 import { supabase } from '../utils/supabaseClient.js';
 
 const BUFFER_INTERVAL_MS = 500;
+const LS_CACHE_KEY = 'seabird_ships_v1';
+const LS_CACHE_TTL_MS = 10 * 60 * 1000; // 10분
 const PROXY_WS_URL = import.meta.env.VITE_PROXY_URL
   ? import.meta.env.VITE_PROXY_URL.replace(/^http/, 'ws') + '/relay'
   : 'ws://localhost:3001/relay';
@@ -16,6 +18,30 @@ export function useAISStream(mapRef) {
   const { setWsStatus, setShipCount } = useStore.getState();
 
   const loadCache = useCallback(async () => {
+    const trySetData = () => {
+      const source = mapRef.current?.getSource('ships');
+      if (source) {
+        const features = Array.from(shipMapRef.current.values());
+        source.setData({ type: 'FeatureCollection', features });
+        setShipCount(features.length);
+      } else {
+        setTimeout(trySetData, 300);
+      }
+    };
+
+    // 1) localStorage 즉시 복원 (~0ms) — 지도 소스 준비되면 바로 렌더링
+    try {
+      const raw = localStorage.getItem(LS_CACHE_KEY);
+      if (raw) {
+        const { ts, features } = JSON.parse(raw);
+        if (Date.now() - ts < LS_CACHE_TTL_MS && Array.isArray(features)) {
+          features.forEach(f => shipMapRef.current.set(f.properties.mmsi, f));
+          trySetData();
+        }
+      }
+    } catch { /* localStorage 비활성화 또는 파싱 실패 무시 */ }
+
+    // 2) Supabase에서 최신 데이터 로드 (백그라운드)
     const { data: ships } = await supabase
       .from('ships')
       .select('mmsi, ship_name, vessel_type, lat, lng, speed, heading, destination, flag_country, nav_status, eta')
@@ -53,18 +79,13 @@ export function useAISStream(mapRef) {
       }
     });
 
-    // 지도 소스가 준비될 때까지 재시도 후 데이터 반영
-    const trySetData = () => {
-      const source = mapRef.current?.getSource('ships');
-      if (source) {
-        const features = Array.from(shipMapRef.current.values());
-        source.setData({ type: 'FeatureCollection', features });
-        setShipCount(features.length);
-      } else {
-        setTimeout(trySetData, 300);
-      }
-    };
     trySetData();
+
+    // 3) localStorage 갱신 (다음 새로고침에서 즉시 사용)
+    try {
+      const features = Array.from(shipMapRef.current.values());
+      localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ ts: Date.now(), features }));
+    } catch { /* 용량 초과 등 무시 */ }
   }, [mapRef, setShipCount]);
 
   const flushBuffer = useCallback(() => {
