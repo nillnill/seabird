@@ -3,6 +3,7 @@ import useStore from '../store/useStore.js';
 import { runCargoEstimator } from '../agents/cargoEstimator.js';
 import { supabase } from '../utils/supabaseClient.js';
 import { SHIP_CHARACTERS } from '../data/shipCharacters.js';
+import { LOCODE_MAP } from '../data/locodeMap.js';
 
 const ALPHA3_TO_ALPHA2 = {
   USA:'US', GBR:'GB', DEU:'DE', DNK:'DK', ESP:'ES', FRA:'FR', ITA:'IT', NLD:'NL',
@@ -229,15 +230,18 @@ function formatDestination(raw) {
   const trimmed = raw.trim();
   if (!trimmed || /^[-/. *?0]+$/.test(trimmed)) return null;
 
-  // LOCODE는 보통 첫 번째 토큰 (예: "KRPUS BUSAN" → "KRPUS")
   const token = trimmed.toUpperCase().split(/[\s,/]+/)[0];
 
   if (/^[A-Z]{2}[A-Z0-9]{3}$/.test(token)) {
     const alpha2 = token.slice(0, 2);
-    const cityKo = LOCODE_CITY_KO[token];
     const countryKo = ALPHA2_KO[alpha2];
-    if (cityKo && countryKo) return `${cityKo}(${token})/${countryKo}`;
-    if (cityKo) return `${cityKo}(${token})`;
+    // 1순위: 한국어 도시명
+    const cityKo = LOCODE_CITY_KO[token];
+    if (cityKo) return countryKo ? `${cityKo}(${token})/${countryKo}` : `${cityKo}(${token})`;
+    // 2순위: UN LOCODE 영문 도시명
+    const cityEn = LOCODE_MAP[token];
+    if (cityEn) return countryKo ? `${cityEn}(${token})/${countryKo}` : `${cityEn}(${token})`;
+    // 3순위: 국가명만
     if (countryKo) return `${token}/${countryKo}`;
   }
 
