@@ -19,6 +19,8 @@
 | 백엔드 | Node.js + Express + ws (포트 3001) |
 | AIS 데이터 | aisstream.io WebSocket (전 세계 BoundingBox) |
 | 뉴스 검색 | Perplexity API (영문 검색 → Claude 한국어 번역) |
+| 날씨 | Open-Meteo API (무료, 키 불필요 — 해역별 날씨코드·풍속) |
+| 원자재/운임 | Perplexity API (가격 검색 → Claude 구조화) |
 
 ---
 
@@ -51,7 +53,9 @@ seabird/
 │   │   ├── portAnalyst.js     ← 10분 폴링, Haiku, 30개 항만 combined
 │   │   ├── chokepointWatcher.js ← 5분 폴링, Haiku, 7개 초크포인트 combined
 │   │   ├── geopoliticalLinker.js ← 15분 폴링, Sonnet, Perplexity 영문검색 → 한국어 번역
-│   │   └── masterAgent.js     ← 10분 폴링, Opus, 전체 종합 보고
+│   │   ├── masterAgent.js     ← 10분 폴링, Opus, 전체 종합 보고
+│   │   ├── weatherAgent.js    ← 30분 폴링, Haiku, Open-Meteo 13개 해역 날씨 → 이모지 마커
+│   │   └── commodityAnalyst.js ← 60분 폴링, Haiku, Perplexity 원자재·운임 가격
 │   └── data/
 │       └── tradePairs.js      ← 15개 교역 쌍 + 계절 인덱스 (CommonJS)
 │
@@ -69,6 +73,7 @@ seabird/
     │   ├── MapFilter.jsx      ← 선종별 필터 토글 (8종 + 색상 범례)
     │   ├── PortMarker.jsx     ← 30개 항만 GL 레이어 (circle + symbol, hover 라벨)
     │   ├── ChokepointMarker.jsx ← 7개 초크포인트 HTML 마커 (severity pulse 애니메이션)
+    │   ├── WeatherMarker.jsx  ← 날씨 이모지 마커 13개 해역 (WEATHER_AGENT raw_data.points 연동)
     │   ├── RegionIntelPanel.jsx ← 지역 인텔 모달 (Civ7 스타일, 3탭: 현황/역사/뉴스, 캐릭터 이미지 지원)
     │   ├── CommandFeed.jsx    ← 오른쪽 패널 전체
     │   ├── CommanderInput.jsx ← 자연어 입력창
@@ -108,10 +113,13 @@ Node.js 서버 (server/index.js)
     ├─ agents/portAnalyst.js      (10분, Haiku)  ─┐
     ├─ agents/chokepointWatcher.js (5분, Haiku)   ├─ Supabase INSERT
     ├─ agents/geopoliticalLinker.js(15분, Sonnet)  │   agent_reports
-    └─ agents/masterAgent.js       (10분, Opus)  ──┘
+    ├─ agents/masterAgent.js       (10분, Opus)    │
+    ├─ agents/weatherAgent.js      (30분, Haiku)   │  ← Open-Meteo 13개 해역
+    └─ agents/commodityAnalyst.js  (60분, Haiku) ──┘  ← Perplexity 원자재·운임
                                                     ↓ Realtime
 브라우저 (useAgentReports.js)          ←── Supabase Realtime 구독
     → addReport() → 피드 카드 표시
+    → WEATHER_AGENT 보고는 raw_data.points → setWeatherMarkers() → 지도 이모지 마커
 
 CARGO ESTIMATOR (선박 클릭)
 브라우저 → POST /api/cargo-estimate → 서버 → Claude Sonnet → JSON 응답
@@ -141,7 +149,7 @@ Node.js 서버 (포트 3001)
 
 ---
 
-## 5개 AI 에이전트
+## 7개 AI 에이전트
 
 에이전트는 **서버(server/agents/)** 에서 실행됨. 모델 티어화로 비용 최적화.
 
@@ -151,6 +159,8 @@ Node.js 서버 (포트 3001)
 | CHOKEPOINT WATCHER | `server/agents/chokepointWatcher.js` | claude-haiku-4-5 | 5분 폴링 | 7개 초크포인트 combined, 항상 보고 |
 | GEOPOLITICAL LINKER | `server/agents/geopoliticalLinker.js` | claude-sonnet-4-6 | 15분 폴링 | Perplexity 영문검색 → Claude 한국어 번역 |
 | MASTER AGENT | `server/agents/masterAgent.js` | claude-opus-4-8 | 10분 폴링 | 전체 종합, 긴급 시 에이전트 재실행 |
+| WEATHER AGENT | `server/agents/weatherAgent.js` | claude-haiku-4-5 | 30분 폴링 | Open-Meteo로 13개 해역 날씨 수집 → 이모지·심각도 마커 + 악천후 보고. 항상 보고 |
+| COMMODITY ANALYST | `server/agents/commodityAnalyst.js` | claude-haiku-4-5 | 60분 폴링 | Perplexity로 원자재·운임 가격 검색 → 구조화 data_points + 한국어 시황 |
 | CARGO ESTIMATOR | `src/agents/cargoEstimator.js` | claude-sonnet-4-6 | 선박 클릭 | 선박 종류별 전용 프롬프트, vessel_type 변경 시 자동 재실행 |
 
 ### 에이전트 시작 지연 (server/index.js)
@@ -158,7 +168,14 @@ Node.js 서버 (포트 3001)
 - 3000ms: CHOKEPOINT WATCHER
 - 3500ms: PORT ANALYST
 - 4000ms: GEOPOLITICAL LINKER
-- 4500ms: MASTER AGENT
+- 5000ms: BASELINES WRITER
+- 5500ms: WEATHER AGENT
+- 6000ms: COMMODITY ANALYST
+
+> 새 에이전트 추가 체크리스트: ① `server/agents/<name>.js` (run/start export) → ② `server/index.js` import + setTimeout stagger → ③ 프론트 3곳 등록: `FeedFilter.jsx` AGENT_OPTIONS, `ReportCard.jsx` AGENT_CONFIG, `useStore.js` feedFilters.agents 기본값.
+
+### 날씨 이모지 마커
+WEATHER_AGENT는 13개 해역(초크포인트 7 + 태풍다발 해역 6)의 Open-Meteo 현재 날씨를 WMO 코드→이모지, 돌풍(m/s)→심각도(INFO/WARNING/CRITICAL)로 변환해 `raw_data.points`에 담아 보고. 폭풍급 돌풍(≥28m/s)은 🌀로 강조. 프론트는 `useAgentReports`가 최신 WEATHER_AGENT 보고의 points를 `setWeatherMarkers()`로 store에 넣고, `WeatherMarkers` 클래스(mapboxgl.Marker)가 지도에 렌더. Open-Meteo는 **API 키 불필요**.
 
 ---
 
@@ -332,6 +349,7 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 | 5+ | 30개 항만 확장 + 선종 분류 버그 수정 + RegionIntelPanel + 선박 상세 UI 개선 | ✅ 완료 |
 | 5++ | ShipDetailPanel Civ7 리디자인 + 선박·지역 캐릭터 45개 이미지 시스템 구축 | ✅ 완료 |
 | 5+++ | 통계 대시보드(Recharts 8섹션) + Cargo 캐시(12h) + localStorage 선박 캐시 | ✅ 완료 |
+| 5++++ | WEATHER AGENT(Open-Meteo 날씨 이모지 마커) + COMMODITY ANALYST(Perplexity 원자재·운임 시황) 추가 | ✅ 완료 |
 | 6 | Vercel/Render 배포 | 🔲 진행 중 |
 | 6+ | 비교 수치 시스템 | 🔲 |
 | 7 | 버그픽스 + 데모 시나리오 준비 | 🔲 |

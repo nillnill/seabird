@@ -11,6 +11,8 @@ const AGENT_CONFIG = {
   CHOKEPOINT_WATCHER:  { icon: '🚢', label: 'CHOKEPOINT' },
   CARGO_ESTIMATOR:     { icon: '📦', label: 'CARGO EST.' },
   GEOPOLITICAL_LINKER: { icon: '🌐', label: 'GEO LINKER' },
+  WEATHER_AGENT:       { icon: '🌪️', label: 'WEATHER' },
+  COMMODITY_ANALYST:   { icon: '💹', label: 'COMMODITY' },
 };
 
 function DataPointChip({ dp }) {

@@ -5,6 +5,7 @@ import { useAISStream } from '../hooks/useAISStream.js';
 import { ChokepointMarkers } from './ChokepointMarker.jsx';
 import MapFilter, { VESSEL_TYPE_CONFIG, ALL_VESSEL_TYPES } from './MapFilter.jsx';
 import { PortMarkers } from './PortMarker.jsx';
+import { WeatherMarkers } from './WeatherMarker.jsx';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -31,6 +32,7 @@ export default function MapView() {
   const mapRef = useRef(null);
   const markersRef = useRef(null);
   const portMarkersRef = useRef(null);
+  const weatherMarkersRef = useRef(null);
   const { setSelectedShip, mapCenter, mapZoom, mapFilters, shipTrack } = useStore();
   const [activeStyle, setActiveStyle] = useState('dark');
 
@@ -93,6 +95,9 @@ export default function MapView() {
 
     if (portMarkersRef.current) portMarkersRef.current.destroy?.();
     portMarkersRef.current = new PortMarkers(map);
+
+    if (weatherMarkersRef.current) weatherMarkersRef.current.destroy?.();
+    weatherMarkersRef.current = new WeatherMarkers(map);
 
     // 선박 경로 소스 (초기 빈 LineString)
     if (!map.getSource('ship-track')) {

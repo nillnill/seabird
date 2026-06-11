@@ -9,6 +9,8 @@ const { startPortAnalyst, runPortAnalyst, PORTS, HARDCODED_BASELINE: PORT_BASELI
 const { startChokepointWatcher, runChokepointWatcher, CHOKEPOINTS } = require('./agents/chokepointWatcher');
 const { startBaselinesWriter } = require('./agents/baselinesWriter');
 const { startGeopoliticalLinker, runGeopoliticalLinker } = require('./agents/geopoliticalLinker');
+const { startWeatherAgent } = require('./agents/weatherAgent');
+const { startCommodityAnalyst } = require('./agents/commodityAnalyst');
 const { callClaude } = require('./agents/claudeClient');
 const { TRADE_PAIRS, SEASONAL_INDEX, getSeasonalCategory } = require('./data/tradePairs');
 
@@ -233,6 +235,8 @@ setTimeout(() => startChokepointWatcher(), 3000);
 setTimeout(() => startPortAnalyst(),       3500);
 setTimeout(() => startGeopoliticalLinker(), 4000);
 setTimeout(() => startBaselinesWriter(),   5000);
+setTimeout(() => startWeatherAgent(),      5500);
+setTimeout(() => startCommodityAnalyst(),  6000);
 
 // ── HTTP 엔드포인트 ───────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', ships_buffered: shipUpsertBuf.size }));

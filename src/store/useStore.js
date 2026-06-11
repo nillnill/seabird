@@ -29,7 +29,7 @@ const useStore = create((set) => ({
   // 피드 상태
   reports: [],
   feedFilters: {
-    agents: ['PORT_ANALYST', 'CHOKEPOINT_WATCHER', 'CARGO_ESTIMATOR', 'GEOPOLITICAL_LINKER'],
+    agents: ['PORT_ANALYST', 'CHOKEPOINT_WATCHER', 'CARGO_ESTIMATOR', 'GEOPOLITICAL_LINKER', 'WEATHER_AGENT', 'COMMODITY_ANALYST'],
     severities: ['INFO', 'WARNING', 'CRITICAL'],
     timeRange: '24h',
   },
@@ -64,6 +64,10 @@ const useStore = create((set) => ({
   // 통계 대시보드
   showStatsDashboard: false,
   toggleStatsDashboard: () => set((state) => ({ showStatsDashboard: !state.showStatsDashboard })),
+
+  // 날씨 마커 (WeatherMarkers용) — 감시 지점별 이모지/심각도
+  weatherMarkers: [],
+  setWeatherMarkers: (points) => set({ weatherMarkers: points }),
 }));
 
 export default useStore;

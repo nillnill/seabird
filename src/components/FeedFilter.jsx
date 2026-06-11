@@ -5,6 +5,8 @@ const AGENT_OPTIONS = [
   { id: 'CHOKEPOINT_WATCHER',  label: '🚢 Choke' },
   { id: 'CARGO_ESTIMATOR',     label: '📦 Cargo' },
   { id: 'GEOPOLITICAL_LINKER', label: '🌐 Geo' },
+  { id: 'WEATHER_AGENT',       label: '🌪️ Weather' },
+  { id: 'COMMODITY_ANALYST',   label: '💹 Commodity' },
 ];
 
 const SEVERITY_OPTIONS = ['CRITICAL', 'WARNING', 'INFO'];

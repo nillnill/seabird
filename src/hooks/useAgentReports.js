@@ -3,7 +3,7 @@ import { supabase } from '../utils/supabaseClient.js';
 import useStore from '../store/useStore.js';
 
 export function useAgentReports() {
-  const { addReport, setChokepointSeverity } = useStore.getState();
+  const { addReport, setChokepointSeverity, setWeatherMarkers } = useStore.getState();
 
   useEffect(() => {
     // 초기 로드: 최근 24시간 보고 가져오기
@@ -22,6 +22,11 @@ export function useAgentReports() {
               setChokepointSeverity(r.location.chokepoint_id, r.severity);
             }
           });
+          // 최신 날씨 보고의 지점들로 지도 마커 초기화 (data는 reverse 후 오래된→최신)
+          const latestWeather = [...data].reverse().find(
+            (r) => r.agent_id === 'WEATHER_AGENT' && Array.isArray(r.raw_data?.points)
+          );
+          if (latestWeather) setWeatherMarkers(latestWeather.raw_data.points);
         }
       });
 
@@ -38,6 +43,12 @@ export function useAgentReports() {
             payload.new.location?.chokepoint_id
           ) {
             setChokepointSeverity(payload.new.location.chokepoint_id, payload.new.severity);
+          }
+          if (
+            payload.new.agent_id === 'WEATHER_AGENT' &&
+            Array.isArray(payload.new.raw_data?.points)
+          ) {
+            setWeatherMarkers(payload.new.raw_data.points);
           }
         }
       )
