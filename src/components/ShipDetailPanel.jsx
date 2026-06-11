@@ -398,10 +398,10 @@ export default function ShipDetailPanel() {
                     onClick={() => setShowVesselInfo(v => !v)}
                   >
                     <span className="text-[10px] text-white/40 font-mono shrink-0 mr-2">선종</span>
-                    <span className="flex items-center gap-1.5 text-[11px] font-mono text-white/90">
+                    <span className="flex items-center gap-2 text-[11px] font-mono text-white/90">
                       {VESSEL_TYPE_KO[selectedShip.vessel_type] ?? selectedShip.vessel_type}
-                      <span className="text-[9px] text-blue-400/70 group-hover:text-blue-400 transition-colors">
-                        {showVesselInfo ? '▲' : '▼'}
+                      <span className="text-[9px] px-1 py-0.5 rounded bg-blue-500/15 text-blue-400/80 group-hover:bg-blue-500/25 transition-colors">
+                        {showVesselInfo ? '접기' : '알아보기'}
                       </span>
                     </span>
                   </button>
