@@ -279,6 +279,13 @@ export default function ShipDetailPanel() {
             </div>
           </div>
 
+          {/* 명언 */}
+          <div className="mt-3 pl-4 border-l-2 border-white/20">
+            <p className="text-[11px] italic text-white/60 leading-relaxed">
+              {character.quote}
+            </p>
+          </div>
+
           {/* 선박명 배지 */}
           <div className="mt-3 flex items-center gap-2">
             <span className="text-[9px] text-white/30 font-mono uppercase tracking-widest">탑승 선박</span>
@@ -286,13 +293,6 @@ export default function ShipDetailPanel() {
               {selectedShip.ship_name || '선명 미상'}
             </span>
             <span className="text-[9px] text-white/30 font-mono">· MMSI {selectedShip.mmsi}</span>
-          </div>
-
-          {/* 명언 */}
-          <div className="mt-2 pl-4 border-l-2 border-white/20">
-            <p className="text-[11px] italic text-white/60 leading-relaxed">
-              {character.quote}
-            </p>
           </div>
         </div>
 
