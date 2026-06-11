@@ -6,3 +6,6 @@ server/.env
 *.local
 .DS_Store
 .vercel
+
+# Excel/Office 임시 잠금 파일
+~$*
