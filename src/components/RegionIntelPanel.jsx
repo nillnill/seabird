@@ -10,6 +10,34 @@ const TABS = [
   { id: 'news',    label: '뉴스' },
 ];
 
+function ComparisonGauge({ label, current, baseline, unit, higherIsBad = true }) {
+  const pct = baseline > 0 ? Math.round(((current - baseline) / baseline) * 100) : 0;
+  const ratio = baseline > 0 ? current / baseline : 1;
+  const isCritical = higherIsBad ? ratio > 1.5 : ratio < 0.5;
+  const isWarning  = higherIsBad ? ratio > 1.2 : ratio < 0.75;
+  const barColor   = isCritical ? 'bg-red-500/70' : isWarning ? 'bg-yellow-400/70' : 'bg-blue-400/60';
+  const textColor  = isCritical ? 'text-red-400'  : isWarning ? 'text-yellow-400'  : 'text-green-400';
+  const sign = pct > 0 ? '+' : '';
+  // bar fills based on ratio; baseline marker at 70% of bar width
+  const fillPct = Math.min(Math.max(ratio * 70, 2), 100);
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between items-baseline">
+        <span className="text-[10px] text-white/50">{label}</span>
+        <span className={`text-[11px] font-mono font-bold ${textColor}`}>{sign}{pct}%</span>
+      </div>
+      <div className="relative h-1.5 bg-white/8 rounded overflow-hidden">
+        <div className={`h-full rounded transition-all ${barColor}`} style={{ width: `${fillPct}%` }} />
+        <div className="absolute top-0 bottom-0 w-px bg-white/50" style={{ left: '70%' }} />
+      </div>
+      <div className="flex justify-between text-[9px] text-white/30 font-mono">
+        <span>현재 {current}{unit}</span>
+        <span>평년 {baseline}{unit}</span>
+      </div>
+    </div>
+  );
+}
+
 function renderHistory(text) {
   return text.split('\n').map((line, i) => {
     if (!line.trim()) return <div key={i} className="h-2" />;
@@ -44,9 +72,13 @@ export default function RegionIntelPanel() {
 
     if (!selectedRegion) return;
 
-    // 항만이면 실시간 통계 추가 로드
     if (selectedRegion.type === 'port') {
       fetch(`${PROXY_URL}/api/port-stats?portId=${selectedRegion.id}`)
+        .then(r => r.json())
+        .then(d => setLiveStats(d))
+        .catch(() => {});
+    } else if (selectedRegion.type === 'chokepoint') {
+      fetch(`${PROXY_URL}/api/chokepoint-stats?cpId=${selectedRegion.id}`)
         .then(r => r.json())
         .then(d => setLiveStats(d))
         .catch(() => {});
@@ -219,24 +251,58 @@ export default function RegionIntelPanel() {
                 </div>
               </div>
 
-              {/* 항만 실시간 통계 (항만만) */}
-              {data.type === 'port' && liveStats && (
-                <div className="border-t border-white/10 pt-4">
-                  <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest mb-2">📡 실시간 현황 (1시간 이내)</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="bg-white/5 rounded-lg p-3 text-center">
-                      <p className="text-[9px] text-white/40 font-mono">현재 선박</p>
-                      <p className="text-2xl font-bold font-mono text-white">{liveStats.total_ships}</p>
-                      <p className="text-[9px] text-white/40">척</p>
-                    </div>
-                    <div className="bg-white/5 rounded-lg p-3 text-center">
-                      <p className="text-[9px] text-white/40 font-mono">대기 선박</p>
-                      <p className="text-2xl font-bold font-mono text-white">{liveStats.waiting_ships}</p>
-                      <p className="text-[9px] text-white/40">평년 {liveStats.baseline_waiting}척</p>
-                    </div>
-                  </div>
+              {/* 실시간 현황 + 비교 수치 */}
+              {liveStats && (
+                <div className="border-t border-white/10 pt-4 space-y-4">
+                  <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">📡 실시간 현황 vs 평년</p>
+
+                  {/* 항만: 대기 선박 비교 */}
+                  {data.type === 'port' && (
+                    <>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-white/5 rounded-lg p-3 text-center">
+                          <p className="text-[9px] text-white/40 font-mono">현재 선박</p>
+                          <p className="text-2xl font-bold font-mono text-white">{liveStats.total_ships}</p>
+                          <p className="text-[9px] text-white/40">척</p>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-3 text-center">
+                          <p className="text-[9px] text-white/40 font-mono">대기 선박</p>
+                          <p className="text-2xl font-bold font-mono text-white">{liveStats.waiting_ships}</p>
+                          <p className="text-[9px] text-white/40">평년 {liveStats.baseline_waiting}척</p>
+                        </div>
+                      </div>
+                      <ComparisonGauge
+                        label="대기 선박 vs 평년"
+                        current={liveStats.waiting_ships}
+                        baseline={liveStats.baseline_waiting}
+                        unit="척"
+                        higherIsBad={true}
+                      />
+                    </>
+                  )}
+
+                  {/* 초크포인트: 통과량 비교 */}
+                  {data.type === 'chokepoint' && (
+                    <>
+                      <div className="bg-white/5 rounded-lg p-3 text-center">
+                        <p className="text-[9px] text-white/40 font-mono">현재 통과 선박 (1h)</p>
+                        <p className="text-3xl font-bold font-mono text-white">{liveStats.current_ships}</p>
+                        <p className="text-[9px] text-white/40">척</p>
+                      </div>
+                      <ComparisonGauge
+                        label="통과량 vs 평년"
+                        current={liveStats.current_ships}
+                        baseline={liveStats.baseline}
+                        unit="척"
+                        higherIsBad={false}
+                      />
+                    </>
+                  )}
+
+                  {/* 선종 분포 */}
                   {liveStats.vessel_type_dist?.length > 0 && (
-                    <div className="mt-3 space-y-1.5">
+                    <div className="space-y-1.5">
+                      <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">선종 분포</p>
                       {liveStats.vessel_type_dist.slice(0, 4).map(({ type, count, pct }) => (
                         <div key={type} className="space-y-0.5">
                           <div className="flex justify-between text-[10px]">

@@ -6,7 +6,8 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
 const { startPortAnalyst, runPortAnalyst, PORTS, HARDCODED_BASELINE: PORT_BASELINE } = require('./agents/portAnalyst');
-const { startChokepointWatcher, runChokepointWatcher } = require('./agents/chokepointWatcher');
+const { startChokepointWatcher, runChokepointWatcher, CHOKEPOINTS } = require('./agents/chokepointWatcher');
+const { startBaselinesWriter } = require('./agents/baselinesWriter');
 const { startGeopoliticalLinker, runGeopoliticalLinker } = require('./agents/geopoliticalLinker');
 const { callClaude } = require('./agents/claudeClient');
 const { TRADE_PAIRS, SEASONAL_INDEX, getSeasonalCategory } = require('./data/tradePairs');
@@ -214,6 +215,7 @@ connectAIS();
 setTimeout(() => startChokepointWatcher(), 3000);
 setTimeout(() => startPortAnalyst(),       3500);
 setTimeout(() => startGeopoliticalLinker(), 4000);
+setTimeout(() => startBaselinesWriter(),   5000);
 
 // ── HTTP 엔드포인트 ───────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', ships_buffered: shipUpsertBuf.size }));
@@ -403,6 +405,52 @@ app.get('/api/port-stats', async (req, res) => {
     });
   } catch (err) {
     console.error('[PORT_STATS] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/chokepoint-stats', async (req, res) => {
+  const { cpId } = req.query;
+  const cp = CHOKEPOINTS?.find(c => c.id === cpId);
+  if (!cp) return res.status(404).json({ error: 'chokepoint not found' });
+
+  try {
+    const [[latMin, lngMin], [latMax, lngMax]] = cp.bbox;
+    const cutoff = new Date(Date.now() - 3600000).toISOString();
+
+    const { data: ships } = await supabase.from('ships')
+      .select('vessel_type, speed')
+      .gte('lat', latMin).lte('lat', latMax)
+      .gte('lng', lngMin).lte('lng', lngMax)
+      .gte('updated_at', cutoff);
+
+    const total = (ships ?? []).length;
+    const CP_HARDCODED_BASELINE = { suez: 58, malacca: 247, hormuz: 89, panama: 35, dover: 312, korea_strait: 156, bab_el_mandeb: 67 };
+
+    const { data: baselineRow } = await supabase.from('baselines')
+      .select('avg_90d')
+      .eq('location_id', cpId)
+      .eq('metric', 'daily_throughput')
+      .order('snapshot_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    const baseline = baselineRow?.avg_90d ?? CP_HARDCODED_BASELINE[cpId] ?? 50;
+    const change_pct = baseline > 0 ? Math.round(((total - baseline) / baseline) * 100) : 0;
+
+    const typeDist = {};
+    (ships ?? []).forEach(s => { const t = s.vessel_type || 'Other'; typeDist[t] = (typeDist[t] || 0) + 1; });
+
+    res.json({
+      current_ships: total,
+      baseline,
+      change_pct,
+      vessel_type_dist: Object.entries(typeDist)
+        .sort((a, b) => b[1] - a[1])
+        .map(([type, count]) => ({ type, count, pct: total ? Math.round(count / total * 100) : 0 })),
+    });
+  } catch (err) {
+    console.error('[CHOKEPOINT_STATS] error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
