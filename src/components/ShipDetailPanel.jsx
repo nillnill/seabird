@@ -78,6 +78,77 @@ function formatEta(eta) {
   } catch { return null; }
 }
 
+const ALPHA2_KO = {
+  KR:'한국', CN:'중국', JP:'일본', SG:'싱가포르', HK:'홍콩', TW:'대만',
+  US:'미국', CA:'캐나다', MX:'멕시코', PA:'파나마', BR:'브라질', AR:'아르헨티나', CL:'칠레',
+  GB:'영국', DE:'독일', NL:'네덜란드', BE:'벨기에', FR:'프랑스', IT:'이탈리아',
+  ES:'스페인', PT:'포르투갈', NO:'노르웨이', SE:'스웨덴', DK:'덴마크', FI:'핀란드',
+  PL:'폴란드', RO:'루마니아', GR:'그리스', TR:'튀르키예', CY:'키프로스', MT:'몰타',
+  RU:'러시아', UA:'우크라이나', EE:'에스토니아', LV:'라트비아', LT:'리투아니아',
+  AE:'아랍에미리트', SA:'사우디아라비아', QA:'카타르', KW:'쿠웨이트', BH:'바레인', OM:'오만',
+  IR:'이란', IQ:'이라크', EG:'이집트', MA:'모로코', ZA:'남아프리카', NG:'나이지리아',
+  AU:'호주', NZ:'뉴질랜드', IN:'인도', LK:'스리랑카', PK:'파키스탄', BD:'방글라데시',
+  MY:'말레이시아', ID:'인도네시아', TH:'태국', VN:'베트남', PH:'필리핀',
+};
+
+const LOCODE_CITY_KO = {
+  KRPUS:'부산', KRINC:'인천', KRKWA:'광양', KRUSE:'울산', KRMOK:'목포',
+  KRPTK:'평택', KRTYN:'대산', KRYOS:'여수', KRPOH:'포항',
+  CNSHA:'상하이', CNTAO:'칭다오', CNSZX:'선전', CNCAN:'광저우', CNXMN:'샤먼',
+  CNNBO:'닝보', CNTJN:'톈진', CNDLC:'다롄', CNGZU:'광저우', CNNTG:'난통',
+  CNQIN:'칭다오', CNZJG:'장자강', CNHGH:'항저우',
+  JPYOK:'요코하마', JPKOB:'고베', JPOSA:'오사카', JPNGO:'나고야',
+  JPTYO:'도쿄', JPKIJ:'니가타', JPKSM:'카시마',
+  SGSIN:'싱가포르',
+  HKHKG:'홍콩',
+  TWKHH:'가오슝', TWKEL:'지룽', TWTXG:'타이중',
+  USLAX:'로스앤젤레스', USLGB:'롱비치', USNYC:'뉴욕', USSAV:'사바나',
+  USHOU:'휴스턴', USSEA:'시애틀', USORF:'노퍽', USBLT:'볼티모어',
+  NLRTM:'로테르담',
+  DEHAM:'함부르크', DEBRE:'브레머하펜',
+  BEANR:'앤트워프',
+  GBFXT:'펠릭스토우', GBSOU:'사우샘프턴', GBLIV:'리버풀',
+  AEJEA:'제벨알리', AEDXB:'두바이', AEAUH:'아부다비',
+  SADMM:'담맘', SAJUB:'제다', SAKHB:'킹압둘라',
+  QAMES:'메사이드', QADHM:'도하',
+  IRBUZ:'반다르아바스', IRBND:'반다르이맘호메이니',
+  EGPSD:'포트사이드', EGSUZ:'수에즈', EGDAM:'다미에타',
+  MATAN:'탕헤르메드',
+  ZADUR:'더반', ZACPT:'케이프타운',
+  MYPKG:'포트클랑', MYTPP:'탄중펠레파스', MYPGU:'페낭',
+  VNHCM:'호치민', VNSGN:'호치민', VNDAD:'다낭',
+  THLCH:'렘차방', THBKK:'방콕',
+  IDJKT:'자카르타', IDSUB:'수라바야',
+  INBOM:'뭄바이', INMAA:'첸나이', INPAV:'피파바브',
+  LKCMB:'콜롬보',
+  RUVVO:'블라디보스토크', RULED:'상트페테르부르크', RUNVS:'노보로시스크',
+  ESVLC:'발렌시아', ESALG:'알헤시라스', ESBCN:'바르셀로나',
+  ITGOA:'제노바', ITGIT:'지오이아타우로', ITVCE:'베네치아',
+  PABLB:'발보아', PACOC:'콜론',
+  BRSSZ:'산투스', BRREC:'레시피',
+  AUSYD:'시드니', AUMEL:'멜버른', AUBNE:'브리즈번', AUPER:'퍼스',
+};
+
+function formatDestination(raw) {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed || /^[-/. *?0]+$/.test(trimmed)) return null;
+
+  // LOCODE는 보통 첫 번째 토큰 (예: "KRPUS BUSAN" → "KRPUS")
+  const token = trimmed.toUpperCase().split(/[\s,/]+/)[0];
+
+  if (/^[A-Z]{2}[A-Z0-9]{3}$/.test(token)) {
+    const alpha2 = token.slice(0, 2);
+    const cityKo = LOCODE_CITY_KO[token];
+    const countryKo = ALPHA2_KO[alpha2];
+    if (cityKo && countryKo) return `${cityKo}(${token})/${countryKo}`;
+    if (cityKo) return `${cityKo}(${token})`;
+    if (countryKo) return `${token}/${countryKo}`;
+  }
+
+  return trimmed.slice(0, 20);
+}
+
 function InfoRow({ label, value, valueColor }) {
   if (!value) return null;
   return (
@@ -260,7 +331,7 @@ export default function ShipDetailPanel() {
                   value={navInfo?.label}
                   valueColor={navInfo?.color}
                 />
-                <InfoRow label="목적지" value={selectedShip.destination} />
+                <InfoRow label="목적지" value={formatDestination(selectedShip.destination)} />
                 <InfoRow label="도착 예정" value={etaStr} />
                 <InfoRow label="IMO" value={selectedShip.imo} />
                 <InfoRow label="콜사인" value={selectedShip.call_sign} />
