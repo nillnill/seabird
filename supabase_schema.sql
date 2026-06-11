@@ -97,3 +97,5 @@ CREATE POLICY "anon_read_reports" ON agent_reports FOR SELECT USING (true);
 -- ships, ship_positions, baselines: 프록시 서버(service role)만 쓰기 — anon 읽기 허용
 ALTER TABLE ships ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_read_ships" ON ships FOR SELECT USING (true);
+ALTER TABLE ship_positions ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_read_positions" ON ship_positions FOR SELECT USING (true);

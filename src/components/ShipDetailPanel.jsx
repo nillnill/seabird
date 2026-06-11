@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import useStore from '../store/useStore.js';
 import { runCargoEstimator } from '../agents/cargoEstimator.js';
-import { supabase } from '../utils/supabaseClient.js';
 import { SHIP_CHARACTERS } from '../data/shipCharacters.js';
 import { LOCODE_MAP } from '../data/locodeMap.js';
+
+const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
 
 const ALPHA3_TO_ALPHA2 = {
   USA:'US', GBR:'GB', DEU:'DE', DNK:'DK', ESP:'ES', FRA:'FR', ITA:'IT', NLD:'NL',
@@ -293,17 +294,14 @@ export default function ShipDetailPanel() {
       .catch(e => setCargoError(e?.message ?? '추정 실패'))
       .finally(() => setCargoLoading(false));
 
-    supabase
-      .from('ship_positions')
-      .select('lat, lng, recorded_at')
-      .eq('mmsi', selectedShip.mmsi)
-      .order('recorded_at', { ascending: false })
-      .limit(200)
-      .then(({ data }) => {
-        const positions = data ?? [];
-        setTrackData(positions);
-        setShipTrack([...positions].reverse());
-      });
+    fetch(`${PROXY_URL}/api/ship-track?mmsi=${encodeURIComponent(selectedShip.mmsi)}`)
+      .then(r => r.json())
+      .then(({ positions }) => {
+        const list = positions ?? [];
+        setTrackData(list);
+        setShipTrack([...list].reverse());
+      })
+      .catch(() => { setTrackData([]); setShipTrack([]); });
   }, [selectedShip?.mmsi, selectedShip?.vessel_type]);
 
   if (!selectedShip) return null;

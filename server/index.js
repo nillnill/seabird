@@ -237,6 +237,23 @@ setTimeout(() => startBaselinesWriter(),   5000);
 // ── HTTP 엔드포인트 ───────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', ships_buffered: shipUpsertBuf.size }));
 
+// 선박 항적 — service_role로 조회(ship_positions는 anon RLS로 막혀 있어 서버 경유)
+app.get('/api/ship-track', async (req, res) => {
+  const { mmsi } = req.query;
+  if (!mmsi) return res.status(400).json({ error: 'mmsi required' });
+  const { data, error } = await supabase
+    .from('ship_positions')
+    .select('lat, lng, recorded_at')
+    .eq('mmsi', String(mmsi))
+    .order('recorded_at', { ascending: false })
+    .limit(200);
+  if (error) {
+    console.error('[SHIP_TRACK] error:', error.message);
+    return res.status(500).json({ error: error.message });
+  }
+  res.json({ positions: data ?? [] });
+});
+
 app.post('/api/cargo-estimate', async (req, res) => {
   const { mmsi, ship: fallbackShip } = req.body ?? {};
   if (!mmsi) return res.status(400).json({ error: 'mmsi required' });
