@@ -189,11 +189,39 @@ const LOCODE_CITY_KO = {
   INBOM:'뭄바이', INMAA:'첸나이', INPAV:'피파바브',
   LKCMB:'콜롬보',
   RUVVO:'블라디보스토크', RULED:'상트페테르부르크', RUNVS:'노보로시스크',
-  ESVLC:'발렌시아', ESALG:'알헤시라스', ESBCN:'바르셀로나',
-  ITGOA:'제노바', ITGIT:'지오이아타우로', ITVCE:'베네치아',
+  ESVLC:'발렌시아', ESALG:'알헤시라스', ESBCN:'바르셀로나', ESCAR:'카르타헤나',
+  ITGOA:'제노바', ITGIT:'지오이아타우로', ITVCE:'베네치아', ITTRS:'트리에스테',
   PABLB:'발보아', PACOC:'콜론',
-  BRSSZ:'산투스', BRREC:'레시피',
-  AUSYD:'시드니', AUMEL:'멜버른', AUBNE:'브리즈번', AUPER:'퍼스',
+  BRSSZ:'산투스', BRREC:'레시피', BRSFS:'상프란시스코두술',
+  AUSYD:'시드니', AUMEL:'멜버른', AUBNE:'브리즈번', AUPER:'퍼스', AUADL:'애들레이드',
+  // 스칸디나비아·발트해
+  DKKAL:'칼룬보르', DKAAR:'오르후스', DKCPH:'코펜하겐', DKFRC:'프레데리시아',
+  NOSVG:'스타방에르', NOBGO:'베르겐', NOOSL:'오슬로', NOKRS:'크리스티안산',
+  SESTO:'스톡홀름', SEGOT:'예테보리', SEGVX:'옌세핑',
+  FIHEL:'헬싱키', FITKU:'투르쿠', FIOUL:'오울루',
+  // 발트해·동유럽
+  EETAL:'탈린', LVRIX:'리가', LTKLJ:'클라이페다',
+  PLGDY:'그단스크', PLSZZ:'슈체친',
+  RUUST:'우스트루가', RUSPR:'상트페테르부르크',
+  // 지중해·흑해
+  TRIZM:'이즈미르', TRISK:'이스켄데룬',
+  UAODS:'오데사', BGVAR:'바르나',
+  GRATH:'피레우스', GRHER:'이라클리온',
+  CYPFM:'리마솔',
+  // 중동·인도
+  PKKAR:'카라치', BDCGP:'치타공',
+  INHAL:'할디아', INNSA:'나바세바',
+  // 동남아·오세아니아
+  MMRGN:'양곤', KHPNH:'프놈펜',
+  FJSUV:'수바', PXPOM:'포트모르즈비',
+  // 서아프리카·동아프리카
+  GHACC:'테마', NGLOS:'라고스', CMAPL:'두알라',
+  TZDAR:'다르에스살람', MOZPM:'마푸투',
+  // 미주
+  USCHS:'찰스턴', USMIA:'마이애미', USTPA:'탬파', USBAL:'볼티모어',
+  CAVAN:'밴쿠버', CAHAL:'핼리팩스',
+  CLVAP:'발파라이소', PECSM:'카야오',
+  COBTG:'바란키야', VELAG:'라과이라',
 };
 
 function formatDestination(raw) {
