@@ -51,6 +51,73 @@ const VESSEL_TYPE_KO = {
   'Other':          '기타',
 };
 
+const VESSEL_TYPE_INFO = {
+  'Container Ship': {
+    emoji: '📦',
+    desc: '표준화된 금속 컨테이너(TEU)를 쌓아 전 세계 소비재를 운반하는 현대 물류의 핵심 선박입니다.',
+    features: ['갑판 위에 컨테이너를 20~25단까지 적재', '세계 최대급은 24,000+ TEU 적재 가능', '항구의 컨테이너 크레인(STS)으로 하역'],
+    cargo: '전자제품, 의류, 완구, 식품, 자동차 부품 등 거의 모든 소비재',
+    scale: '소형 1,000 TEU ~ 초대형 24,000 TEU',
+    routes: '아시아-유럽 (수에즈 경유), 아시아-북미 태평양 노선',
+  },
+  'Tanker': {
+    emoji: '🛢️',
+    desc: '원유·정제유·화학물질 등 액체 화물을 전용 탱크에 실어 나르는 선박입니다. 세계 에너지 공급의 핵심.',
+    features: ['선체 내부가 여러 구획 탱크로 구성', '이중선체 구조로 유출 사고 방지', '가스 프리 공정 없이는 수리 불가'],
+    cargo: '원유, 나프타, 경유, 가솔린, 화학물질, 식용유',
+    scale: 'Aframax 11만 DWT / Suezmax 16만 DWT / VLCC 32만 DWT',
+    routes: '중동 → 동아시아·유럽, 서아프리카 → 미국',
+  },
+  'Bulk Carrier': {
+    emoji: '⚓',
+    desc: '포장하지 않은 건화물(Dry Bulk)을 대량으로 운반하는 선박. 철강·발전·식량 공급망의 기둥입니다.',
+    features: ['화물창이 넓게 개방된 단순한 구조', '자체 크레인 탑재 여부로 "geared/gearless" 구분', '적재 후 흘수가 매우 깊어짐'],
+    cargo: '철광석, 석탄, 곡물(밀·옥수수·대두), 보크사이트, 시멘트',
+    scale: 'Handysize 1만 ~ Capesize 18만+ DWT',
+    routes: '호주·브라질 → 중국(철광석), 미국·흑해 → 아시아(곡물)',
+  },
+  'LNG Carrier': {
+    emoji: '❄️',
+    desc: '천연가스를 -162°C로 액화해 초저온 탱크에 실어 나르는 고도의 기술 선박입니다.',
+    features: ['구형 모스 탱크 또는 평판형 멤브레인 탱크 방식', '극저온 유지를 위한 이중 단열 시스템', '기화된 BOG(Boil-Off Gas)를 연료로 재활용'],
+    cargo: '액화천연가스(LNG) — 기화 시 부피 약 600배',
+    scale: 'Q-Flex 21만 m³ / Q-Max 26만 m³',
+    routes: '카타르·호주·미국 → 한국·일본·유럽',
+  },
+  'Passenger': {
+    emoji: '🚢',
+    desc: '사람을 운송하는 선박. 크루즈선은 바다 위 호텔로, 수천 명이 항해하며 여가를 즐기는 레저 선박입니다.',
+    features: ['레스토랑·풀장·극장 등 리조트 시설 완비', '수백~수천 명 수용 가능한 거대 구조물', '카페리는 차량과 승객을 함께 운송'],
+    cargo: '상업 화물 없음 — 승객 및 차량(카페리)',
+    scale: '소형 페리 ~ 초대형 크루즈 (Wonder of the Seas: 승객 6,988명)',
+    routes: '카리브해, 지중해, 알래스카, 북유럽 피오르 크루즈 항로',
+  },
+  'Fishing': {
+    emoji: '🐟',
+    desc: '연안에서 원양까지 물고기·오징어·크릴 등을 잡는 선박입니다. 소형 연안어선부터 대형 원양 트롤선까지 다양합니다.',
+    features: ['어망·트롤·연승 등 다양한 어구 탑재', '선상 냉동·가공 시설 보유 (원양)', 'AIS 신호를 의도적으로 끄는 경우도 있음'],
+    cargo: '상업 화물 없음 — 어획물(참치·명태·오징어·크릴 등)',
+    scale: '10톤 미만 소형 ~ 수천 톤 대형 원양 트롤선',
+    routes: '남극해(크릴), 베링해(명태), 인도양·태평양(참치)',
+  },
+  'Special Craft': {
+    emoji: '🔧',
+    desc: '특정 임무를 위해 설계된 선박. 작업선·연구선·준설선·구조선·해저 케이블 포설선 등이 포함됩니다.',
+    features: ['임무별 크레인·ROV·DP 시스템 등 특수 장비 탑재', 'DP(동적 위치 유지)로 정박 없이 정확한 위치 유지', '군함·경비선 등 공공 임무 선박도 포함'],
+    cargo: '임무에 따라 다양 — 해저 케이블, 파이프라인, 구조 물자',
+    scale: '소형 예인선 ~ 대형 해양 플랫폼 설치선',
+    routes: '특정 공사·임무 구역, 해저 인프라 설치 구간',
+  },
+  'Other': {
+    emoji: '❓',
+    desc: '위 분류에 속하지 않는 선박이거나 AIS 데이터가 불명확한 경우입니다. 예인선·부선·관공선·소형 모터보트 등이 포함됩니다.',
+    features: ['분류 코드가 없거나 잘못 입력된 경우', 'AIS 업데이트 주기나 신호 품질 문제', '항만 예인선, 도선선, 관공선 등'],
+    cargo: '불명확',
+    scale: '다양',
+    routes: '다양',
+  },
+};
+
 const NAV_STATUS_KO = {
   0:  { label: '항행 중',       color: '#22C55E' },
   1:  { label: '정박 중',       color: '#60A5FA' },
@@ -174,6 +241,7 @@ export default function ShipDetailPanel() {
   const [cargoError, setCargoError] = useState(null);
   const [trackData, setTrackData] = useState([]);
   const [activeTab, setActiveTab] = useState('info');
+  const [showVesselInfo, setShowVesselInfo] = useState(false);
 
   useEffect(() => {
     if (!selectedShip) {
@@ -186,6 +254,7 @@ export default function ShipDetailPanel() {
     setCargoError(null);
     setCargoLoading(true);
     setActiveTab('info');
+    setShowVesselInfo(false);
 
     runCargoEstimator(selectedShip.mmsi, selectedShip)
       .then(r => setCargoResult(r))
@@ -322,10 +391,59 @@ export default function ShipDetailPanel() {
               {/* 선박 정보 */}
               <div>
                 <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest mb-2">🚢 선박 정보</p>
-                <InfoRow
-                  label="선종"
-                  value={VESSEL_TYPE_KO[selectedShip.vessel_type] ?? selectedShip.vessel_type}
-                />
+                {/* 선종 — 클릭 시 지식 카드 확장 */}
+                <div>
+                  <button
+                    className="w-full flex justify-between items-center py-1.5 border-b border-white/5 hover:bg-white/3 transition-colors group"
+                    onClick={() => setShowVesselInfo(v => !v)}
+                  >
+                    <span className="text-[10px] text-white/40 font-mono shrink-0 mr-2">선종</span>
+                    <span className="flex items-center gap-1.5 text-[11px] font-mono text-white/90">
+                      {VESSEL_TYPE_KO[selectedShip.vessel_type] ?? selectedShip.vessel_type}
+                      <span className="text-[9px] text-blue-400/70 group-hover:text-blue-400 transition-colors">
+                        {showVesselInfo ? '▲' : '▼'}
+                      </span>
+                    </span>
+                  </button>
+                  {showVesselInfo && (() => {
+                    const info = VESSEL_TYPE_INFO[selectedShip.vessel_type] ?? VESSEL_TYPE_INFO['Other'];
+                    return (
+                      <div className="mt-1 mb-2 rounded-lg overflow-hidden border border-white/10 text-[11px]"
+                           style={{ background: `linear-gradient(135deg, ${character.bgFrom}cc, ${character.bgTo}cc)` }}>
+                        <div className="px-3 pt-3 pb-2">
+                          <p className="text-base mb-1">{info.emoji}</p>
+                          <p className="text-white/90 leading-relaxed">{info.desc}</p>
+                        </div>
+                        <div className="px-3 pb-2 space-y-2 border-t border-white/10 pt-2">
+                          <div>
+                            <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest mb-1">특징</p>
+                            <ul className="space-y-0.5">
+                              {info.features.map((f, i) => (
+                                <li key={i} className="text-white/70 flex gap-1.5">
+                                  <span className="text-white/30 shrink-0">·</span>{f}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          <div>
+                            <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest mb-1">주요 화물</p>
+                            <p className="text-white/70">{info.cargo}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest mb-1">규모</p>
+                              <p className="text-white/70">{info.scale}</p>
+                            </div>
+                            <div>
+                              <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest mb-1">주요 항로</p>
+                              <p className="text-white/70">{info.routes}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
                 <InfoRow
                   label="운항 상태"
                   value={navInfo?.label}
