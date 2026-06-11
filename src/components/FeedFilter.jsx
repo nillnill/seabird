@@ -4,7 +4,6 @@ const AGENT_OPTIONS = [
   { id: 'PORT_ANALYST',        label: '🏗️ Port' },
   { id: 'CHOKEPOINT_WATCHER',  label: '🚢 Choke' },
   { id: 'CARGO_ESTIMATOR',     label: '📦 Cargo' },
-  { id: 'ANOMALY_DETECTOR',    label: '🔍 Anomaly' },
   { id: 'GEOPOLITICAL_LINKER', label: '🌐 Geo' },
 ];
 

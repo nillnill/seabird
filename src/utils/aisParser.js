@@ -1,12 +1,16 @@
 import { inferCountryFromPort } from './geoUtils.js';
 
 export function mapAISTypeToCategory(typeCode) {
+  if (!typeCode) return 'Other';
+  if (typeCode === 30) return 'Fishing';
+  if (typeCode >= 31 && typeCode <= 39) return 'Special Craft'; // 예인·군함·범선·레저 등
+  if (typeCode >= 40 && typeCode <= 49) return 'Special Craft'; // 고속선(HSC)
+  if (typeCode >= 50 && typeCode <= 59) return 'Special Craft'; // 도선·예인·SAR 등
+  if (typeCode >= 60 && typeCode <= 69) return 'Passenger';
   if (typeCode >= 72 && typeCode <= 74) return 'Bulk Carrier';
   if (typeCode >= 70 && typeCode <= 79) return 'Container Ship';
   if (typeCode === 84 || typeCode === 85) return 'LNG Carrier';
   if (typeCode >= 80 && typeCode <= 89) return 'Tanker';
-  if (typeCode >= 50 && typeCode <= 59) return 'Special Craft';
-  if (typeCode >= 30 && typeCode <= 39) return 'Fishing';
   return 'Other';
 }
 

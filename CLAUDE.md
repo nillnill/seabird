@@ -13,10 +13,11 @@
 | 프론트엔드 | Vite 6 + React 18 + Tailwind CSS v3 |
 | 상태관리 | Zustand 5 |
 | 지도 | Mapbox GL JS v3 (dark-v11 스타일) |
-| AI | Claude API `claude-sonnet-4-6` (브라우저에서 직접 호출) |
+| AI | Claude API (서버에서 호출 — Haiku/Sonnet/Opus 티어화) |
 | DB / Realtime | Supabase (PostgreSQL + Realtime) |
-| 백엔드 프록시 | Node.js + Express + ws (포트 3001) |
-| AIS 데이터 | aisstream.io WebSocket |
+| 백엔드 | Node.js + Express + ws (포트 3001) |
+| AIS 데이터 | aisstream.io WebSocket (전 세계 BoundingBox) |
+| 뉴스 검색 | Perplexity API (영문 검색 → Claude 한국어 번역) |
 
 ---
 
@@ -24,66 +25,192 @@
 
 ```
 seabird/
-├── CLAUDE.md                  ← 이 파일 (작업마다 업데이트)
-├── MIC_PRD_v1.md              ← 원본 PRD (수정 완료)
-├── supabase_schema.sql        ← Supabase SQL 에디터에서 실행
+├── CLAUDE.md
+├── supabase_schema.sql
+├── seabird_characters.xlsx    ← 캐릭터 45개 + 이미지 생성 프롬프트 (AI 이미지 제작용)
 ├── index.html
-├── vite.config.js
-├── tailwind.config.js
-├── postcss.config.js
+├── vite.config.js / tailwind.config.js / postcss.config.js
 ├── package.json               ← 프론트엔드 의존성
 ├── .env.local                 ← 프론트엔드 환경변수 (git 제외)
-├── .env.local.example
+│
+├── public/
+│   └── characters/            ← 캐릭터 이미지 에셋 (45개 PNG, 사용자가 AI로 생성 후 배치)
+│       ├── ship_container.png ~ ship_other.png  (선박 타입 8개)
+│       └── region_suez.png ~ region_hochiminhcity.png  (지역 37개)
+│
+├── scripts/
+│   └── generate_character_excel.cjs  ← 캐릭터 엑셀 재생성 스크립트
 │
 ├── server/
-│   ├── index.js               ← AIS 프록시 + relay + /api/news
+│   ├── index.js               ← AIS 프록시 + relay + /api/news + /api/cargo-estimate + 에이전트 시작
 │   ├── package.json
 │   ├── .env                   ← 서버 환경변수 (git 제외)
-│   └── .env.example
+│   ├── agents/
+│   │   ├── claudeClient.js    ← Node.js 전용 Claude API 래퍼
+│   │   ├── portAnalyst.js     ← 10분 폴링, Haiku, 30개 항만 combined
+│   │   ├── chokepointWatcher.js ← 5분 폴링, Haiku, 7개 초크포인트 combined
+│   │   ├── geopoliticalLinker.js ← 15분 폴링, Sonnet, Perplexity 영문검색 → 한국어 번역
+│   │   └── masterAgent.js     ← 10분 폴링, Opus, 전체 종합 보고
+│   └── data/
+│       └── tradePairs.js      ← 15개 교역 쌍 + 계절 인덱스 (CommonJS)
 │
 └── src/
     ├── main.jsx
-    ├── App.jsx                ← 레이아웃 + 에이전트 스케줄 초기화
-    ├── index.css              ← 다크 해양 테마 + chokepoint 애니메이션
+    ├── App.jsx                ← 레이아웃만 (에이전트 시작 코드 없음)
+    ├── index.css
     │
     ├── agents/
-    │   ├── orchestrator.js    ← Commander 자연어 → 에이전트 라우팅
-    │   ├── portAnalyst.js     ← 10분 폴링, 8개 항만
-    │   ├── chokepointWatcher.js ← 5분 폴링, 9개 초크포인트
-    │   ├── cargoEstimator.js  ← 선박 클릭 트리거
-    │   ├── anomalyDetector.js ← 2분 폴링, ship_positions 기반
-    │   └── geopoliticalLinker.js ← 15분 폴링, 뉴스 연동
+    │   ├── cargoEstimator.js  ← POST /api/cargo-estimate 호출 (브라우저)
+    │   └── orchestrator.js    ← Commander 자연어 → 에이전트 라우팅
     │
     ├── components/
-    │   ├── MapView.jsx        ← Mapbox 지도 + 선박 아이콘
+    │   ├── MapView.jsx        ← Mapbox 지도 + 선박 아이콘 + 스타일 토글
+    │   ├── MapFilter.jsx      ← 선종별 필터 토글 (8종 + 색상 범례)
+    │   ├── PortMarker.jsx     ← 30개 항만 GL 레이어 (circle + symbol, hover 라벨)
+    │   ├── ChokepointMarker.jsx ← 7개 초크포인트 HTML 마커 (severity pulse 애니메이션)
+    │   ├── RegionIntelPanel.jsx ← 지역 인텔 모달 (Civ7 스타일, 3탭: 현황/역사/뉴스, 캐릭터 이미지 지원)
     │   ├── CommandFeed.jsx    ← 오른쪽 패널 전체
     │   ├── CommanderInput.jsx ← 자연어 입력창
-    │   ├── ReportCard.jsx     ← 에이전트 보고 카드
-    │   ├── ReportModal.jsx    ← 상세 보기 모달 (react-markdown)
-    │   ├── ShipDetailPanel.jsx ← 선박 클릭 상세 + 화물 추정
-    │   ├── ChokepointMarker.jsx ← Mapbox custom HTML marker
+    │   ├── ReportCard.jsx     ← 에이전트 보고 카드 (MASTER_AGENT: 보라색)
+    │   ├── ReportModal.jsx    ← 상세 보기 모달
+    │   ├── ShipDetailPanel.jsx ← 선박 클릭 상세 (Civ7 스타일 대형 모달, 캐릭터 헤더 + 3탭: 현황/화물추정/항적)
     │   ├── FeedFilter.jsx     ← 에이전트별 필터 토글
     │   └── StatusBar.jsx      ← 상단 상태 표시줄
     │
     ├── hooks/
-    │   ├── useAISStream.js    ← ws://localhost:3001/relay 연결
-    │   └── useAgentReports.js ← Supabase Realtime 구독
+    │   ├── useAISStream.js    ← ws://localhost:3001/relay 연결 + Supabase 캐시 로드
+    │   └── useAgentReports.js ← Supabase Realtime 구독 (에이전트 보고 수신)
     │
     ├── store/
     │   └── useStore.js        ← Zustand 전역 상태
     │
     ├── utils/
-    │   ├── claudeClient.js    ← Claude API fetch wrapper
+    │   ├── claudeClient.js    ← (현재 미사용 — 에이전트가 서버로 이동됨)
     │   ├── supabaseClient.js  ← Supabase 클라이언트 싱글턴
-    │   ├── aisParser.js       ← AIS 메시지 → GeoJSON Feature
-    │   └── geoUtils.js        ← distanceNm, nmToDeg, bbox 유틸
+    │   ├── aisParser.js       ← AIS 메시지 → GeoJSON Feature, mmsiToFlag, mapAISTypeToCategory
+    │   └── geoUtils.js        ← distanceNm, nmToDeg 등
     │
-    ├── data/
-    │   ├── tradePairs.js      ← 15개 교역 쌍 + 계절 인덱스
-    │   └── hardcodedBaselines.js ← 초기 베이스라인 시드값
-    │
-    └── types/                 ← (현재 미사용, 향후 JSDoc 타입)
+    └── data/
+        ├── regionData.js      ← 37개 지역 데이터 (초크포인트 7 + 항만 30): 캐릭터·통계·역사·newsQuery·image
+        ├── shipCharacters.js  ← 선박 타입별 창작 캐릭터 8개 (직함·quote·bgColor·image 경로)
+        ├── tradePairs.js      ← (브라우저용 ESM 버전, 현재 미사용)
+        └── hardcodedBaselines.js ← (서버 에이전트에 인라인됨)
 ```
+
+---
+
+## 아키텍처 — 에이전트 데이터 흐름
+
+```
+Node.js 서버 (server/index.js)
+    ├─ agents/portAnalyst.js      (10분, Haiku)  ─┐
+    ├─ agents/chokepointWatcher.js (5분, Haiku)   ├─ Supabase INSERT
+    ├─ agents/geopoliticalLinker.js(15분, Sonnet)  │   agent_reports
+    └─ agents/masterAgent.js       (10분, Opus)  ──┘
+                                                    ↓ Realtime
+브라우저 (useAgentReports.js)          ←── Supabase Realtime 구독
+    → addReport() → 피드 카드 표시
+
+CARGO ESTIMATOR (선박 클릭)
+브라우저 → POST /api/cargo-estimate → 서버 → Claude Sonnet → JSON 응답
+(선박 종류별 전용 프롬프트: 탱커/LNG/벌크/어선/여객/특수선/컨테이너)
+
+REGION INTEL (항만·초크포인트 클릭)
+브라우저 → GET /api/news?id={regionId} → Perplexity 영문 검색 → Claude 한국어 번역
+```
+
+**핵심**: 에이전트는 서버에서만 실행. 브라우저는 Supabase Realtime으로 수신.
+
+---
+
+## 아키텍처 — AIS 데이터 흐름
+
+```
+aisstream.io WebSocket (전 세계 BoundingBox: [[-90,-180],[90,180]])
+    ↓ (단일 연결, server/index.js)
+Node.js 서버 (포트 3001)
+    ├─ WebSocket relay → 브라우저 (ws://localhost:3001/relay)
+    ├─ 30초 배치 → Supabase ships 테이블 upsert
+    │   수집 필드: mmsi, lat, lng, speed, heading, course, nav_status,
+    │             ship_name, vessel_type, destination, eta, draught,
+    │             call_sign, imo, flag_country
+    └─ 10초마다 → ship_positions INSERT
+```
+
+---
+
+## 5개 AI 에이전트
+
+에이전트는 **서버(server/agents/)** 에서 실행됨. 모델 티어화로 비용 최적화.
+
+| 에이전트 | 파일 | 모델 | 트리거 | 동작 |
+|----------|------|------|--------|------|
+| PORT ANALYST | `server/agents/portAnalyst.js` | claude-haiku-4-5 | 10분 폴링 | 30개 항만 combined, 항상 보고 |
+| CHOKEPOINT WATCHER | `server/agents/chokepointWatcher.js` | claude-haiku-4-5 | 5분 폴링 | 7개 초크포인트 combined, 항상 보고 |
+| GEOPOLITICAL LINKER | `server/agents/geopoliticalLinker.js` | claude-sonnet-4-6 | 15분 폴링 | Perplexity 영문검색 → Claude 한국어 번역 |
+| MASTER AGENT | `server/agents/masterAgent.js` | claude-opus-4-8 | 10분 폴링 | 전체 종합, 긴급 시 에이전트 재실행 |
+| CARGO ESTIMATOR | `src/agents/cargoEstimator.js` | claude-sonnet-4-6 | 선박 클릭 | 선박 종류별 전용 프롬프트, vessel_type 변경 시 자동 재실행 |
+
+### 에이전트 시작 지연 (server/index.js)
+서버 시작 3초 후 500ms 간격 stagger:
+- 3000ms: CHOKEPOINT WATCHER
+- 3500ms: PORT ANALYST
+- 4000ms: GEOPOLITICAL LINKER
+- 4500ms: MASTER AGENT
+
+---
+
+## 지역 데이터 (regionData.js)
+
+총 37개 지역 — 초크포인트 7개 + 항만 30개.
+
+**초크포인트 (7)**: suez, malacca, hormuz, panama, dover, korea_strait, bab_el_mandeb
+
+**항만 (30)**: busan, incheon, gwangyang, singapore, shanghai, rotterdam, la_lb, dubai,
+yokohama, kobe, ningbo, shenzhen, hongkong, vladivostok, portklang, mumbai,
+hamburg, newyork, guangzhou, qingdao, tianjin, antwerp, tanjung_pelepas,
+xiamen, kaohsiung, laem_chabang, jakarta, colombo, savannah, hochiminhcity
+
+각 지역은 `{ type, character, stats, history, newsQuery }` 구조.
+캐릭터는 **해당 국가 역사 인물**이어야 함 (타국 인물 사용 금지).
+`character.image` 필드: `/characters/region_{id}.png` — 파일 없으면 `flagEmoji`로 fallback.
+
+---
+
+## 선박 캐릭터 (shipCharacters.js)
+
+선박 타입별 **창작 아케타입 캐릭터** 8개. 역사 인물 아님, 인종·성별 밸런스 고려.
+
+| vessel_type | 캐릭터 (한국어) | 직함 | 이미지 |
+|-------------|---------------|------|--------|
+| Container Ship | 박서연 | 글로벌 컨테이너 선단 선장 | ship_container.png |
+| Tanker | 카림 알-라시드 | 원유 탱커 수석 엔지니어 | ship_tanker.png |
+| Bulk Carrier | 아마두 디알로 | 벌크선 화물장 | ship_bulk.png |
+| LNG Carrier | 소피아 베르그 | LNG 안전관제 책임자 | ship_lng.png |
+| Passenger | 아르준 메타 | 크루즈 선장 | ship_passenger.png |
+| Fishing | 마리아 산토스 | 원양어선 선장 | ship_fishing.png |
+| Special Craft | 후안 카레라 | 해양 구조·특수 작전 지휘관 | ship_special.png |
+| Other | 아이나 오베르그 | 미지 항로 항법사 | ship_other.png |
+
+이미지 생성 프롬프트: `seabird_characters.xlsx` 참조. 생성 후 `public/characters/`에 배치.
+
+---
+
+## Cargo Estimator 선박 종류별 프롬프트
+
+`server/index.js` `/api/cargo-estimate` 엔드포인트에서 `vessel_type`에 따라 분기:
+
+| vessel_type | 추정 내용 |
+|-------------|----------|
+| Tanker | 원유·석유제품·화학물질·식용유, VLCC/Suezmax/Aframax 사이즈 |
+| LNG Carrier | LNG 적재량(m³), 출처국 추정 |
+| Bulk Carrier | 철광석·석탄·곡물, Capesize/Panamax 사이즈 |
+| Fishing | 어획량 추정, 상업 화물 없음 |
+| Passenger | 탑승객 수 추정, 상업 화물 없음 |
+| Special Craft | 선박 기능 추정, 상업 화물 없음 |
+| Container Ship / Other | TEU + 품목별 화물 분포 |
+
+**우선순위**: fallback(브라우저)의 vessel_type이 non-Other이면 DB 값보다 우선 적용.
 
 ---
 
@@ -95,8 +222,8 @@ seabird/
 VITE_SUPABASE_URL=https://xxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
 VITE_MAPBOX_TOKEN=pk.eyJ...
-VITE_ANTHROPIC_API_KEY=sk-ant-...
 VITE_PROXY_URL=http://localhost:3001
+# VITE_ANTHROPIC_API_KEY 불필요 — 에이전트가 서버에서 실행됨
 ```
 
 ### 서버 (`server/.env`)
@@ -106,11 +233,10 @@ AISSTREAM_API_KEY=...
 SUPABASE_URL=https://xxxx.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=eyJ...
 NEWSAPI_KEY=...
+ANTHROPIC_API_KEY=sk-ant-...   ← 에이전트가 서버에서 사용
+PERPLEXITY_API_KEY=pplx-...    ← 지역 뉴스 영문 검색용
 PORT=3001
 ```
-
-> **주의**: NewsAPI 키는 서버에만 있음. 브라우저에서 NewsAPI를 직접 호출하면 CORS 에러 발생.
-> 반드시 프록시 `/api/news` 엔드포인트를 통해 호출.
 
 ---
 
@@ -126,105 +252,50 @@ npm run dev:all
 
 # 개별 실행
 npm run dev       # Vite 프론트엔드 → http://localhost:5173
-npm run server    # Node.js 프록시  → http://localhost:3001
+npm run server    # Node.js 서버 → http://localhost:3001
 
 # 프로덕션 빌드
 node_modules/.bin/vite build   # npx vite 사용 금지 (vite@8 설치 문제)
 ```
 
-> **빌드 시 주의**: `npx vite build`는 npx가 vite@8을 새로 받아 실패한다.
-> 반드시 `node_modules/.bin/vite build`를 사용할 것.
-
 ---
 
 ## Supabase 스키마
 
-`supabase_schema.sql`을 Supabase SQL 에디터에서 전체 실행.
+| 테이블 | 용도 |
+|--------|------|
+| `ships` | AIS 현재 위치 캐시 (PK: mmsi, 30초 배치 upsert) |
+| `ship_positions` | AIS 위치 이력 (2시간 TTL) |
+| `agent_reports` | 에이전트 보고 카드 (Realtime 활성화, anon 읽기 허용) |
+| `baselines` | 항만/초크포인트 수치 스냅샷 (시계열 누적) |
 
-| 테이블 | 용도 | 특이사항 |
-|--------|------|----------|
-| `ships` | AIS 현재 위치 캐시 | PK: mmsi, 프록시가 30초 배치 upsert |
-| `ship_positions` | AIS 위치 이력 | ANOMALY DETECTOR 전용, 2시간 TTL (서버가 1시간마다 정리) |
-| `agent_reports` | 에이전트 보고 카드 | Realtime 활성화됨, anon 읽기 허용 |
-| `baselines` | 항만/초크포인트 수치 스냅샷 | UNIQUE 제약 없음 (시계열로 누적) |
-| `anomaly_history` | ANOMALY DETECTOR 이력 | agent_reports FK 참조 |
+### ships 테이블 주요 컬럼
 
----
-
-## 아키텍처 — AIS 데이터 흐름
-
-```
-aisstream.io WebSocket
-    ↓ (단일 연결, server/index.js)
-Node.js 프록시 (포트 3001)
-    ├─ WebSocket relay → 브라우저 (ws://localhost:3001/relay)
-    ├─ 30초 배치 → Supabase ships 테이블 upsert
-    └─ 10초마다 → ship_positions INSERT
-
-브라우저 (useAISStream.js)
-    ← ws://localhost:3001/relay
-    → GeoJSON 버퍼(500ms) → Mapbox source.setData()
+```sql
+mmsi, ship_name, vessel_type, lat, lng, speed, heading, course,
+nav_status,      -- AIS NavigationStatus (0=항행, 1=정박, 5=계류 등)
+eta,             -- 목적지 도착 예정 시각
+draught, max_draught, dwt, destination,
+flag_country, imo, call_sign, origin_country, dest_country, updated_at
 ```
 
-**핵심**: 브라우저가 aisstream.io에 직접 연결하지 않는다. 반드시 프록시 relay를 통함.
-
----
-
-## 5개 AI 에이전트
-
-모두 Claude `claude-sonnet-4-6` 호출. 결과는 `agent_reports` INSERT → Realtime → 피드 카드.
-
-| 에이전트 | 파일 | 트리거 | 주요 데이터 |
-|----------|------|--------|-------------|
-| PORT ANALYST | `portAnalyst.js` | 10분 폴링 | ships 테이블 (speed≤2.0 = 대기), baselines |
-| CHOKEPOINT WATCHER | `chokepointWatcher.js` | 5분 폴링 | ships bbox 쿼리, baselines |
-| CARGO ESTIMATOR | `cargoEstimator.js` | 선박 클릭 | selectedShip 정보 + tradePairs |
-| ANOMALY DETECTOR | `anomalyDetector.js` | 2분 폴링 | ship_positions (2h 이력), anomaly_history |
-| GEOPOLITICAL LINKER | `geopoliticalLinker.js` | 15분 폴링 | /api/news, agent_reports (최근 이상 보고) |
-
-### 에이전트 시작 지연 (App.jsx)
-에이전트 간 Claude API rate limit 방지를 위해 500ms 간격 스태거 시작:
-- 0ms: CHOKEPOINT WATCHER
-- 500ms: PORT ANALYST
-- 1000ms: ANOMALY DETECTOR
-- 1500ms: GEOPOLITICAL LINKER
-- CARGO ESTIMATOR: 선박 클릭 시에만 실행
-
----
-
-## Claude API 호출 (`utils/claudeClient.js`)
-
-```javascript
-// 올바른 헤더 형식
-headers: {
-  'Content-Type': 'application/json',
-  'x-api-key': import.meta.env.VITE_ANTHROPIC_API_KEY,
-  'anthropic-version': '2023-06-01',
-  'anthropic-dangerous-direct-browser-access': 'true',  // 브라우저 직접 호출 시 필요
-}
-// model: 'claude-sonnet-4-6'  ← 현재 프로젝트 기준 모델
-```
-
----
-
-## 배포
-
-| 서비스 | 플랫폼 | 설정 파일 |
-|--------|--------|-----------|
-| 프론트엔드 | Vercel | `vercel.json` (Day 6에 생성 예정) |
-| 프록시 서버 | Render | `render.yaml` (Day 6에 생성 예정) |
-
-Vercel 환경변수에서 `VITE_PROXY_URL`을 Render 서버 URL로 교체.
+> `nav_status` 컬럼은 초기 스키마에 없음 — 아래 마이그레이션 필요:
+> ```sql
+> ALTER TABLE ships ADD COLUMN IF NOT EXISTS nav_status SMALLINT;
+> ```
 
 ---
 
 ## 알려진 이슈 / 주의사항
 
 1. **mapbox-gl 번들 크기**: 프로덕션 빌드 시 ~2.3MB 경고. 해커톤 범위에서는 무시.
-2. **heading=511**: AIS 미수신값. `aisParser.js`에서 `null`로 처리해 아이콘 오회전 방지.
-3. **ship_positions 초기 2시간**: 시작 직후엔 AIS 이력 부족. ANOMALY DETECTOR는 LOW_SPEED + PRIOR_ANOMALY_HISTORY 점수만으로 동작하고, 2시간 후 전체 감지 활성화.
-4. **Claude API 429**: 에이전트 동시 5개 이상 호출 시 rate limit 가능. 각 에이전트에 재시도 1회 후 스킵 로직 추가 예정.
+2. **heading=511**: AIS 미수신값. `aisParser.js`에서 `null`로 처리.
+3. **에이전트 초기 CRITICAL 보고**: 서버 시작 직후 AIS 데이터가 적어 초크포인트 통과량이 0으로 집계됨. 30분~1시간 후 안정화.
+4. **MASTER_AGENT 중복 실행**: 시작 시 직전 서버에서 저장된 CRITICAL 보고를 감지해 에이전트를 재실행하는 것은 정상 동작.
 5. **Render 콜드 스타트**: 무료 티어는 15분 비활성 후 슬립. UptimeRobot으로 30분마다 헬스체크 핑 설정 권장.
+6. **ships 테이블 미생성 시 선박 미표시**: `supabase_schema.sql` 전체를 Supabase SQL Editor에서 실행해야 함. `agent_reports`만 있고 `ships`가 없으면 지도에 선박이 나타나지 않음.
+7. **호르무즈 등 일부 해역 선박 공백**: aisstream.io 무료 티어는 지상 수신기 기반이라 페르시아만·홍해 등 일부 해역의 커버리지가 제한됨. 제재 회피 AIS 소등 선박은 수신 불가.
+8. **PortMarker는 GL 레이어 방식**: HTML 마커(mapboxgl.Marker)가 아닌 GeoJSON circle+symbol 레이어로 구현. 줌/팬 시 지도와 정확히 동기화됨. 초크포인트는 여전히 HTML 마커.
 
 ---
 
@@ -233,9 +304,12 @@ Vercel 환경변수에서 `VITE_PROXY_URL`을 Render 서버 URL로 교체.
 | Day | 목표 | 상태 |
 |-----|------|------|
 | 1 | 프로젝트 스캐폴드 + AIS 지도 + Supabase 연결 | ✅ 완료 |
-| 2 | Command Feed UI + Realtime 보고 카드 | 🔲 |
-| 3 | CARGO ESTIMATOR + CHOKEPOINT WATCHER | 🔲 |
-| 4 | PORT ANALYST + ANOMALY DETECTOR | 🔲 |
-| 5 | GEOPOLITICAL LINKER + Commander 자연어 | 🔲 |
-| 6 | 비교 수치 시스템 + Vercel/Render 배포 | 🔲 |
+| 2 | Command Feed UI + Realtime 보고 카드 | ✅ 완료 |
+| 3 | CARGO ESTIMATOR + CHOKEPOINT WATCHER | ✅ 완료 |
+| 4 | PORT ANALYST + MASTER AGENT | ✅ 완료 |
+| 5 | GEOPOLITICAL LINKER + 서버 사이드 에이전트 이전 | ✅ 완료 |
+| 5+ | 30개 항만 확장 + 선종 분류 버그 수정 + RegionIntelPanel + 선박 상세 UI 개선 | ✅ 완료 |
+| 5++ | ShipDetailPanel Civ7 리디자인 + 선박·지역 캐릭터 45개 이미지 시스템 구축 | ✅ 완료 |
+| 6 | Vercel/Render 배포 | 🔲 진행 중 |
+| 6+ | 비교 수치 시스템 | 🔲 |
 | 7 | 버그픽스 + 데모 시나리오 준비 | 🔲 |

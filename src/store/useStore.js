@@ -8,10 +8,28 @@ const useStore = create((set) => ({
   setSelectedShip: (ship) => set({ selectedShip: ship }),
   focusMap: (lat, lng, zoom = 8) => set({ mapCenter: [lng, lat], mapZoom: zoom }),
 
+  // 지도 필터 (선종·국기·속도)
+  mapFilters: {
+    vesselTypes: ['Container Ship', 'Tanker', 'Bulk Carrier', 'LNG Carrier', 'Passenger', 'Fishing', 'Special Craft', 'Other'],
+    flagCountries: [],
+    speedMax: 30,
+  },
+  setMapFilter: (key, val) =>
+    set((state) => ({ mapFilters: { ...state.mapFilters, [key]: val } })),
+
+  // 선박 이동 경로
+  shipTrack: [],
+  setShipTrack: (pts) => set({ shipTrack: pts }),
+  clearShipTrack: () => set({ shipTrack: [] }),
+
+  // 지역 인텔 패널 (항만 + 초크포인트 통합)
+  selectedRegion: null,
+  setSelectedRegion: (region) => set({ selectedRegion: region }),
+
   // 피드 상태
   reports: [],
   feedFilters: {
-    agents: ['PORT_ANALYST', 'CHOKEPOINT_WATCHER', 'CARGO_ESTIMATOR', 'ANOMALY_DETECTOR', 'GEOPOLITICAL_LINKER'],
+    agents: ['PORT_ANALYST', 'CHOKEPOINT_WATCHER', 'CARGO_ESTIMATOR', 'GEOPOLITICAL_LINKER'],
     severities: ['INFO', 'WARNING', 'CRITICAL'],
     timeRange: '24h',
   },

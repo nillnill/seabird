@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS ships (
   speed           DECIMAL(5, 2),
   heading         SMALLINT,
   course          SMALLINT,
+  nav_status      SMALLINT,
   draught         DECIMAL(4, 1),
   max_draught     DECIMAL(4, 1),
   dwt             INTEGER,

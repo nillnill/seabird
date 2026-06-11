@@ -36,7 +36,7 @@ export class ChokepointMarkers {
     el.title = cp.name;
 
     el.addEventListener('click', () => {
-      useStore.getState().focusMap(cp.lat, cp.lng, 7);
+      useStore.getState().setSelectedRegion({ id: cp.id, name: cp.name, type: 'chokepoint', lat: cp.lat, lng: cp.lng });
     });
 
     const marker = new mapboxgl.Marker({ element: el })

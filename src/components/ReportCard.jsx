@@ -10,7 +10,6 @@ const AGENT_CONFIG = {
   PORT_ANALYST:        { icon: '🏗️', label: 'PORT ANALYST' },
   CHOKEPOINT_WATCHER:  { icon: '🚢', label: 'CHOKEPOINT' },
   CARGO_ESTIMATOR:     { icon: '📦', label: 'CARGO EST.' },
-  ANOMALY_DETECTOR:    { icon: '🔍', label: 'ANOMALY' },
   GEOPOLITICAL_LINKER: { icon: '🌐', label: 'GEO LINKER' },
 };
 
@@ -34,6 +33,8 @@ export default function ReportCard({ report, onClick }) {
   const { focusMap } = useStore();
   const sev = SEVERITY_CONFIG[report.severity] ?? SEVERITY_CONFIG.INFO;
   const agent = AGENT_CONFIG[report.agent_id] ?? { icon: '📡', label: report.agent_id };
+  const borderColor = sev.borderColor;
+  const bgColor = sev.bgColor;
 
   const kstTime = new Date(report.created_at).toLocaleTimeString('ko-KR', {
     timeZone: 'Asia/Seoul',
@@ -45,7 +46,7 @@ export default function ReportCard({ report, onClick }) {
 
   return (
     <div
-      className={`border ${sev.borderColor} ${sev.bgColor} rounded-lg p-3 space-y-2 cursor-pointer hover:brightness-110 transition-all`}
+      className={`border ${borderColor} ${bgColor} rounded-lg p-3 space-y-2 cursor-pointer hover:brightness-110 transition-all`}
       onClick={onClick}
     >
       {/* 헤더 */}
