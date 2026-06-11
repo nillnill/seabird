@@ -21,3 +21,5 @@ services:
         sync: false
       - key: PERPLEXITY_API_KEY
         sync: false
+      - key: NEWSAPI_KEY
+        sync: false
