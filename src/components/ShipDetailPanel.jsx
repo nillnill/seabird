@@ -312,15 +312,9 @@ export default function ShipDetailPanel() {
   const character = SHIP_CHARACTERS[selectedShip.vessel_type] ?? SHIP_CHARACTERS['Other'];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* 백드롭 */}
-      <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={() => { setSelectedShip(null); clearShipTrack(); }}
-      />
-
+    <div className="absolute top-3 left-3 bottom-3 z-40 w-[26rem] max-w-[calc(100%-1.5rem)] flex flex-col pointer-events-none">
       {/* 패널 */}
-      <div className="relative w-full max-w-lg mx-4 max-h-[88vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+      <div className="relative w-full h-full flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10 pointer-events-auto">
 
         {/* 캐릭터 헤더 */}
         <div
@@ -342,10 +336,10 @@ export default function ShipDetailPanel() {
             style={{ backgroundImage: 'repeating-linear-gradient(45deg, white 0, white 1px, transparent 0, transparent 50%)', backgroundSize: '6px 6px' }}
           />
 
-          {/* 캐릭터 이미지 + 정보 */}
+          {/* 캐릭터 이미지 + 정보 (인물명 → 명언 → 탑승 선박) */}
           <div className="flex items-start gap-4">
             {/* 캐릭터 이미지 */}
-            <div className="w-20 h-20 shrink-0 rounded-xl overflow-hidden border border-white/20 bg-black/30 flex items-center justify-center">
+            <div className="w-40 h-40 shrink-0 rounded-xl overflow-hidden border border-white/20 bg-black/30 flex items-center justify-center">
               {character.image ? (
                 <img
                   src={character.image}
@@ -355,43 +349,46 @@ export default function ShipDetailPanel() {
                 />
               ) : null}
               <span
-                className="text-4xl"
+                className="text-7xl"
                 style={{ display: character.image ? 'none' : 'flex' }}
               >
                 {character.symbolEmoji}
               </span>
             </div>
 
-            {/* 직함·선박 국적 */}
-            <div className="flex-1 min-w-0">
+            {/* 오른쪽 정보 컬럼 — 이미지 높이에 맞춰 정렬 */}
+            <div className="flex-1 min-w-0 flex flex-col min-h-[10rem]">
+              {/* 국적 */}
               {flagEmoji && (
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="text-lg">{flagEmoji}</span>
-                  <span className="text-[11px] text-white/60">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-base">{flagEmoji}</span>
+                  <span className="text-[10px] text-white/60">
                     {ALPHA3_KO[selectedShip.flag_country?.toUpperCase()] ?? selectedShip.flag_country}
                   </span>
                 </div>
               )}
-              <p className="text-sm font-semibold text-white leading-snug">
+              {/* 인물명·직함 */}
+              <p className="text-base font-bold text-white leading-tight truncate">
+                {character.name}
+              </p>
+              <p className="text-[12px] font-semibold text-white/85 leading-snug">
                 {character.title}
               </p>
+              {/* 명언 */}
+              <div className="mt-2 pl-3 border-l-2 border-white/20">
+                <p className="text-[11px] italic text-white/60 leading-relaxed">
+                  {character.quote}
+                </p>
+              </div>
+              {/* 탑승 선박 — 하단 정렬 */}
+              <div className="mt-auto pt-2">
+                <span className="text-[9px] text-white/30 font-mono uppercase tracking-widest">탑승 선박</span>
+                <p className="text-[12px] text-white font-mono font-bold leading-tight truncate">
+                  {selectedShip.ship_name || '선명 미상'}
+                </p>
+                <p className="text-[9px] text-white/30 font-mono">MMSI {selectedShip.mmsi}</p>
+              </div>
             </div>
-          </div>
-
-          {/* 명언 */}
-          <div className="mt-3 pl-4 border-l-2 border-white/20">
-            <p className="text-[11px] italic text-white/60 leading-relaxed">
-              {character.quote}
-            </p>
-          </div>
-
-          {/* 선박명 배지 */}
-          <div className="mt-3 flex items-center gap-2">
-            <span className="text-[9px] text-white/30 font-mono uppercase tracking-widest">탑승 선박</span>
-            <span className="text-[11px] text-white font-mono font-bold">
-              {selectedShip.ship_name || '선명 미상'}
-            </span>
-            <span className="text-[9px] text-white/30 font-mono">· MMSI {selectedShip.mmsi}</span>
           </div>
         </div>
 

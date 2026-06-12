@@ -33,7 +33,7 @@ export default function MapView() {
   const markersRef = useRef(null);
   const portMarkersRef = useRef(null);
   const weatherMarkersRef = useRef(null);
-  const { setSelectedShip, mapCenter, mapZoom, mapFilters, shipTrack } = useStore();
+  const { setSelectedShip, selectedShip, mapCenter, mapZoom, mapFilters, shipTrack } = useStore();
   const [activeStyle, setActiveStyle] = useState('dark');
 
   useAISStream(mapRef);
@@ -109,11 +109,32 @@ export default function MapView() {
         id: 'ship-track-line',
         type: 'line',
         source: 'ship-track',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: {
           'line-color': '#60A5FA',
-          'line-width': 2,
-          'line-opacity': 0.75,
+          'line-width': 3,
+          'line-opacity': 0.9,
           'line-dasharray': [2, 1],
+        },
+      });
+    }
+
+    // 항적 시작점/현재 위치 점 소스 (초기 빈 FeatureCollection)
+    if (!map.getSource('ship-track-points')) {
+      map.addSource('ship-track-points', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: 'ship-track-points-layer',
+        type: 'circle',
+        source: 'ship-track-points',
+        paint: {
+          'circle-radius': ['match', ['get', 'role'], 'current', 7, 4],
+          'circle-color': ['match', ['get', 'role'], 'current', '#60A5FA', '#94A3B8'],
+          'circle-opacity': ['match', ['get', 'role'], 'current', 1, 0.7],
+          'circle-stroke-width': ['match', ['get', 'role'], 'current', 2, 1],
+          'circle-stroke-color': '#FFFFFF',
         },
       });
     }
@@ -143,11 +164,13 @@ export default function MapView() {
     if (!style) return;
     const currentData = map.getSource('ships')?._data;
     const currentTrack = map.getSource('ship-track')?._data;
+    const currentTrackPoints = map.getSource('ship-track-points')?._data;
     map.setStyle(style.url);
     map.once('style.load', () => {
       setupShipsLayer(map);
       if (currentData) map.getSource('ships')?.setData(currentData);
       if (currentTrack) map.getSource('ship-track')?.setData(currentTrack);
+      if (currentTrackPoints) map.getSource('ship-track-points')?.setData(currentTrackPoints);
     });
   }, [activeStyle]);
 
@@ -182,16 +205,50 @@ export default function MapView() {
     map.setFilter('ships-layer', filterParts);
   }, [mapFilters]);
 
-  // 선박 경로 표시
+  // 선박 경로 표시 (선 + 시작/현재 점 + 자동 화면 맞춤)
   useEffect(() => {
     const map = mapRef.current;
-    const src = map?.getSource('ship-track');
-    if (!src) return;
+    const lineSrc = map?.getSource('ship-track');
+    const pointSrc = map?.getSource('ship-track-points');
+    if (!lineSrc || !pointSrc) return;
+
     const coords = shipTrack.map(p => [p.lng, p.lat]);
-    src.setData({
+
+    lineSrc.setData({
       type: 'Feature',
       geometry: { type: 'LineString', coordinates: coords },
     });
+
+    // shipTrack: 오래된→최신 순. [0]=출발점, [마지막]=현재 위치
+    const pointFeatures = [];
+    if (coords.length > 0) {
+      if (coords.length > 1) {
+        pointFeatures.push({
+          type: 'Feature',
+          properties: { role: 'start' },
+          geometry: { type: 'Point', coordinates: coords[0] },
+        });
+      }
+      pointFeatures.push({
+        type: 'Feature',
+        properties: { role: 'current' },
+        geometry: { type: 'Point', coordinates: coords[coords.length - 1] },
+      });
+    }
+    pointSrc.setData({ type: 'FeatureCollection', features: pointFeatures });
+
+    // 항적 전체가 보이도록 화면 맞춤 (좌측 카드에 가리지 않게 패딩)
+    if (coords.length >= 2) {
+      const bounds = coords.reduce(
+        (b, c) => b.extend(c),
+        new mapboxgl.LngLatBounds(coords[0], coords[0]),
+      );
+      map.fitBounds(bounds, {
+        padding: { left: 360, right: 60, top: 60, bottom: 60 },
+        maxZoom: 9,
+        duration: 1200,
+      });
+    }
   }, [shipTrack]);
 
   return (
@@ -201,8 +258,8 @@ export default function MapView() {
         className="w-full h-full"
         style={{ background: '#0A0E1A' }}
       />
-      {/* 맵 스타일 토글 */}
-      <div className="absolute top-3 left-3 flex gap-1 z-10">
+      {/* 맵 스타일 토글 — 선박 선택 시 좌측 카드에 가리지 않게 오른쪽으로 이동 */}
+      <div className={`absolute top-3 flex gap-1 z-10 transition-all duration-300 ${selectedShip ? 'left-[27.5rem]' : 'left-3'}`}>
         {MAP_STYLES.map(s => (
           <button
             key={s.id}

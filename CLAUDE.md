@@ -37,9 +37,11 @@ seabird/
 ├── .env.local                 ← 프론트엔드 환경변수 (git 제외)
 │
 ├── public/
-│   └── characters/            ← 캐릭터 이미지 에셋 (45개 PNG, 사용자가 AI로 생성 후 배치)
-│       ├── ship_container.png ~ ship_other.png  (선박 타입 8개)
-│       └── region_suez.png ~ region_hochiminhcity.png  (지역 37개)
+│   └── characters/            ← 캐릭터 이미지 에셋 (45개 JPG, 512px·품질85로 최적화 — 합계 ~1.6MB)
+│       ├── ship_container.jpg ~ ship_other.jpg  (선박 타입 8개)
+│       └── region_suez.jpg ~ region_hochiminhcity.jpg  (지역 37개)
+│
+│   ※ image-asset/  ← AI 생성 원본 PNG(1024px, 합계 ~99MB). git 제외. scripts/optimize_characters.py로 public/characters/*.jpg 생성
 │
 ├── scripts/
 │   └── generate_character_excel.cjs  ← 캐릭터 엑셀 재생성 스크립트
@@ -79,7 +81,7 @@ seabird/
     │   ├── CommanderInput.jsx ← 자연어 입력창
     │   ├── ReportCard.jsx     ← 에이전트 보고 카드 (MASTER_AGENT: 보라색)
     │   ├── ReportModal.jsx    ← 상세 보기 모달
-    │   ├── ShipDetailPanel.jsx ← 선박 클릭 상세 (Civ7 스타일 대형 모달, 캐릭터 헤더 + 3탭: 현황/화물추정/항적)
+    │   ├── ShipDetailPanel.jsx ← 선박 클릭 상세 (좌측 떠 있는 카드, 캐릭터 헤더 + 3탭: 현황/화물추정/항적). 항적 탭 fetch가 setShipTrack → MapView가 지도에 경로 선+시작/현재 점 표시 + fitBounds
     │   ├── FeedFilter.jsx     ← 에이전트별 필터 토글
     │   ├── StatusBar.jsx      ← 상단 상태 표시줄 (📊 통계 대시보드 토글 버튼)
     │   └── StatsDashboard.jsx ← 통계 대시보드 모달 (Recharts, 8개 섹션)
@@ -196,7 +198,7 @@ xiamen, kaohsiung, laem_chabang, jakarta, colombo, savannah, hochiminhcity
 
 각 지역은 `{ type, character, stats, history, newsQuery }` 구조.
 캐릭터는 **해당 국가 역사 인물**이어야 함 (타국 인물 사용 금지).
-`character.image` 필드: `/characters/region_{id}.png` — 파일 없으면 `flagEmoji`로 fallback.
+`character.image` 필드: `/characters/region_{id}.jpg` — 파일 없으면 `flagEmoji`로 fallback.
 
 ---
 
@@ -206,14 +208,14 @@ xiamen, kaohsiung, laem_chabang, jakarta, colombo, savannah, hochiminhcity
 
 | vessel_type | 캐릭터 (한국어) | 직함 | 이미지 |
 |-------------|---------------|------|--------|
-| Container Ship | 박서연 | 글로벌 컨테이너 선단 선장 | ship_container.png |
-| Tanker | 카림 알-라시드 | 원유 탱커 수석 엔지니어 | ship_tanker.png |
-| Bulk Carrier | 아마두 디알로 | 벌크선 화물장 | ship_bulk.png |
-| LNG Carrier | 소피아 베르그 | LNG 안전관제 책임자 | ship_lng.png |
-| Passenger | 아르준 메타 | 크루즈 선장 | ship_passenger.png |
-| Fishing | 마리아 산토스 | 원양어선 선장 | ship_fishing.png |
-| Special Craft | 후안 카레라 | 해양 구조·특수 작전 지휘관 | ship_special.png |
-| Other | 아이나 오베르그 | 미지 항로 항법사 | ship_other.png |
+| Container Ship | 박서연 | 글로벌 컨테이너 선단 선장 | ship_container.jpg |
+| Tanker | 카림 알-라시드 | 원유 탱커 수석 엔지니어 | ship_tanker.jpg |
+| Bulk Carrier | 아마두 디알로 | 벌크선 화물장 | ship_bulk.jpg |
+| LNG Carrier | 소피아 베르그 | LNG 안전관제 책임자 | ship_lng.jpg |
+| Passenger | 아르준 메타 | 크루즈 선장 | ship_passenger.jpg |
+| Fishing | 마리아 산토스 | 원양어선 선장 | ship_fishing.jpg |
+| Special Craft | 후안 카레라 | 해양 구조·특수 작전 지휘관 | ship_special.jpg |
+| Other | 아이나 오베르그 | 미지 항로 항법사 | ship_other.jpg |
 
 이미지 생성 프롬프트: `seabird_characters.xlsx` 참조. 생성 후 `public/characters/`에 배치.
 

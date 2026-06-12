@@ -14,7 +14,7 @@ export const REGION_DATA = {
       quote: '"수에즈 운하는 이집트인의 것이다. 우리가 피로 건설했고, 우리가 지킬 것이다."',
       bgFrom: '#2D1A02',
       bgTo: '#713F12',
-      image: '/characters/region_suez.png',
+      image: '/characters/region_suez.jpg',
     },
     stats: {
       worldRank: '세계 1위 전략 운하',
@@ -46,7 +46,7 @@ export const REGION_DATA = {
       quote: '"항 투아는 죽지 않는다. 말라카가 살아있는 한."',
       bgFrom: '#052E16',
       bgTo: '#166534',
-      image: '/characters/region_malacca.png',
+      image: '/characters/region_malacca.jpg',
     },
     stats: {
       worldRank: '세계 최다 통항 해협',
@@ -78,7 +78,7 @@ export const REGION_DATA = {
       quote: '"페르시아만은 제국의 혈맥이다. 이 바다를 지배하는 자가 동서를 지배한다."',
       bgFrom: '#3B0000',
       bgTo: '#7F1D1D',
-      image: '/characters/region_hormuz.png',
+      image: '/characters/region_hormuz.jpg',
     },
     stats: {
       worldRank: '원유 수송 세계 1위 해협',
@@ -108,7 +108,7 @@ export const REGION_DATA = {
       quote: '"파나마 운하는 파나마인의 것이다. 나는 그것을 되찾을 것이다."',
       bgFrom: '#0F172A',
       bgTo: '#1E3A5F',
-      image: '/characters/region_panama.png',
+      image: '/characters/region_panama.jpg',
     },
     stats: {
       worldRank: '세계 2위 전략 운하',
@@ -140,7 +140,7 @@ export const REGION_DATA = {
       quote: '"영국은 모든 장병이 각자의 임무를 다할 것을 기대한다."',
       bgFrom: '#111827',
       bgTo: '#374151',
-      image: '/characters/region_dover.png',
+      image: '/characters/region_dover.jpg',
     },
     stats: {
       worldRank: '세계 최다 연간 통항 해협',
@@ -173,7 +173,7 @@ export const REGION_DATA = {
       quote: '"죽고자 하면 살고, 살고자 하면 죽는다."',
       bgFrom: '#2D0A0A',
       bgTo: '#881337',
-      image: '/characters/region_korea_strait.png',
+      image: '/characters/region_korea_strait.jpg',
     },
     stats: {
       worldRank: '동북아 핵심 통항로',
@@ -205,7 +205,7 @@ export const REGION_DATA = {
       quote: '"두 바다가 만나는 이 관문을 지배하는 자는 세상의 절반을 손에 쥔 것이다."',
       bgFrom: '#042F2E',
       bgTo: '#134E4A',
-      image: '/characters/region_bab_el_mandeb.png',
+      image: '/characters/region_bab_el_mandeb.jpg',
     },
     stats: {
       worldRank: '홍해-아덴만 유일 관문',
@@ -239,7 +239,7 @@ export const REGION_DATA = {
       quote: '"바다를 지배하는 자가 무역을 지배한다."',
       bgFrom: '#0C1A3D',
       bgTo: '#1E3A8A',
-      image: '/characters/region_busan.png',
+      image: '/characters/region_busan.jpg',
     },
     stats: {
       worldRank: '세계 7위 컨테이너항',
@@ -272,7 +272,7 @@ export const REGION_DATA = {
       quote: '"나라를 지키는 것은 군사의 수가 아니라 불굴의 의지다."',
       bgFrom: '#052E16',
       bgTo: '#166534',
-      image: '/characters/region_incheon.png',
+      image: '/characters/region_incheon.jpg',
     },
     stats: {
       worldRank: '한국 제2항만',
@@ -304,7 +304,7 @@ export const REGION_DATA = {
       quote: '"철은 국가의 쌀이다."',
       bgFrom: '#2D1000',
       bgTo: '#7C2D12',
-      image: '/characters/region_gwangyang.png',
+      image: '/characters/region_gwangyang.jpg',
     },
     stats: {
       worldRank: '한국 제3항만',
@@ -336,7 +336,7 @@ export const REGION_DATA = {
       quote: '"작은 나라가 생존하려면 세계 최고의 항구가 되어야 한다."',
       bgFrom: '#3B0000',
       bgTo: '#9F1239',
-      image: '/characters/region_singapore.png',
+      image: '/characters/region_singapore.jpg',
     },
     stats: {
       worldRank: '세계 2위 컨테이너항',
@@ -368,7 +368,7 @@ export const REGION_DATA = {
       quote: '"동서를 잇는 거대한 함대가 천하에 중국의 힘을 알린다."',
       bgFrom: '#422006',
       bgTo: '#92400E',
-      image: '/characters/region_shanghai.png',
+      image: '/characters/region_shanghai.jpg',
     },
     stats: {
       worldRank: '세계 1위 컨테이너항 (2010~)',
@@ -401,7 +401,7 @@ export const REGION_DATA = {
       quote: '"지식과 무역이 만나는 곳에 문명이 피어난다."',
       bgFrom: '#3D1A00',
       bgTo: '#B45309',
-      image: '/characters/region_rotterdam.png',
+      image: '/characters/region_rotterdam.jpg',
     },
     stats: {
       worldRank: '유럽 최대항, 세계 11위',
@@ -433,7 +433,7 @@ export const REGION_DATA = {
       quote: '"태평양은 미국의 내해가 될 것이다. 우리는 그 무역을 지배해야 한다."',
       bgFrom: '#0C1A3D',
       bgTo: '#1D4ED8',
-      image: '/characters/region_la_lb.png',
+      image: '/characters/region_la_lb.jpg',
     },
     stats: {
       worldRank: '미국 최대 항만 복합체',
@@ -465,7 +465,7 @@ export const REGION_DATA = {
       quote: '"아버지는 낙타를, 나는 랜드로버를. 내 아들은 비행기를, 손자는 다시 낙타를 탈 것이다."',
       bgFrom: '#3D2900',
       bgTo: '#B45309',
-      image: '/characters/region_dubai.png',
+      image: '/characters/region_dubai.jpg',
     },
     stats: {
       worldRank: '세계 9위 컨테이너항',
@@ -499,7 +499,7 @@ export const REGION_DATA = {
       quote: '"일본을 바꾸고 싶다면, 먼저 바다로 나가라."',
       bgFrom: '#1A1A2E',
       bgTo: '#16213E',
-      image: '/characters/region_yokohama.png',
+      image: '/characters/region_yokohama.jpg',
     },
     stats: {
       worldRank: '세계 34위 컨테이너항',
@@ -531,7 +531,7 @@ export const REGION_DATA = {
       quote: '"항구를 지배하는 자가 천하의 부를 지배한다."',
       bgFrom: '#2D1B1B',
       bgTo: '#4A1515',
-      image: '/characters/region_kobe.png',
+      image: '/characters/region_kobe.jpg',
     },
     stats: {
       worldRank: '세계 약 55위 컨테이너항',
@@ -563,7 +563,7 @@ export const REGION_DATA = {
       quote: '"바다에는 국경이 없다. 오직 바람과 이익만 있을 뿐이다."',
       bgFrom: '#0D1B2A',
       bgTo: '#1B3A4B',
-      image: '/characters/region_ningbo.png',
+      image: '/characters/region_ningbo.jpg',
     },
     stats: {
       worldRank: '세계 3위 컨테이너항',
@@ -595,7 +595,7 @@ export const REGION_DATA = {
       quote: '"먼저 일부가 부유해지게 하라. 그러면 나머지도 따라올 것이다."',
       bgFrom: '#0A1628',
       bgTo: '#0E2D4F',
-      image: '/characters/region_shenzhen.png',
+      image: '/characters/region_shenzhen.jpg',
     },
     stats: {
       worldRank: '세계 4위 컨테이너항',
@@ -627,7 +627,7 @@ export const REGION_DATA = {
       quote: '"불의한 교역은 일시적 이익을 주지만, 결국 천하를 병들게 한다."',
       bgFrom: '#1A0A0A',
       bgTo: '#3B1515',
-      image: '/characters/region_hongkong.png',
+      image: '/characters/region_hongkong.jpg',
     },
     stats: {
       worldRank: '세계 8위 컨테이너항',
@@ -659,7 +659,7 @@ export const REGION_DATA = {
       quote: '"태평양은 러시아의 미래다. 우리는 이 항구를 세계의 동방 수도로 만들 것이다."',
       bgFrom: '#0D1117',
       bgTo: '#1A2744',
-      image: '/characters/region_vladivostok.png',
+      image: '/characters/region_vladivostok.jpg',
     },
     stats: {
       worldRank: '러시아 태평양 최대항',
@@ -691,7 +691,7 @@ export const REGION_DATA = {
       quote: '"교역의 왕국은 칼이 아닌 바다 위에 세워진다."',
       bgFrom: '#0D2818',
       bgTo: '#1A4A2A',
-      image: '/characters/region_portklang.png',
+      image: '/characters/region_portklang.jpg',
     },
     stats: {
       worldRank: '세계 12위 컨테이너항',
@@ -723,7 +723,7 @@ export const REGION_DATA = {
       quote: '"해군 없이는 독립도 없다. 바다를 지배하는 자가 인도를 지배한다."',
       bgFrom: '#2A1A00',
       bgTo: '#4A3000',
-      image: '/characters/region_mumbai.png',
+      image: '/characters/region_mumbai.jpg',
     },
     stats: {
       worldRank: '인도 최대 항만 복합체',
@@ -755,7 +755,7 @@ export const REGION_DATA = {
       quote: '"한자의 깃발이 닿는 곳이 곧 우리의 영토다."',
       bgFrom: '#1A1A0A',
       bgTo: '#2D2D1B',
-      image: '/characters/region_hamburg.png',
+      image: '/characters/region_hamburg.jpg',
     },
     stats: {
       worldRank: '유럽 2위, 세계 17위 컨테이너항',
@@ -787,7 +787,7 @@ export const REGION_DATA = {
       quote: '"무역은 문명의 언어다. 자유로운 교역만이 국가를 위대하게 만든다."',
       bgFrom: '#0A0A1A',
       bgTo: '#1A1A3D',
-      image: '/characters/region_newyork.png',
+      image: '/characters/region_newyork.jpg',
     },
     stats: {
       worldRank: '미국 동부 최대항, 세계 약 23위',
@@ -821,7 +821,7 @@ export const REGION_DATA = {
       quote: '"천하는 모두의 것이다. 혁명은 아직 끝나지 않았다."',
       bgFrom: '#2D0A0A',
       bgTo: '#7F1D1D',
-      image: '/characters/region_guangzhou.png',
+      image: '/characters/region_guangzhou.jpg',
     },
     stats: {
       worldRank: '세계 5위 컨테이너항',
@@ -853,7 +853,7 @@ export const REGION_DATA = {
       quote: '"때를 기다리는 자만이 큰 물고기를 낚는다."',
       bgFrom: '#0A1A2D',
       bgTo: '#1A3A5F',
-      image: '/characters/region_qingdao.png',
+      image: '/characters/region_qingdao.jpg',
     },
     stats: {
       worldRank: '세계 6위 컨테이너항',
@@ -885,7 +885,7 @@ export const REGION_DATA = {
       quote: '"서양의 기술을 받아들이되, 중국의 근본을 지켜야 한다."',
       bgFrom: '#1A0A00',
       bgTo: '#4A2000',
-      image: '/characters/region_tianjin.png',
+      image: '/characters/region_tianjin.jpg',
     },
     stats: {
       worldRank: '세계 8위 컨테이너항',
@@ -917,7 +917,7 @@ export const REGION_DATA = {
       quote: '"앤트워프는 세계가 만나는 곳이다. 예술처럼, 무역도 경계가 없다."',
       bgFrom: '#1A0A1A',
       bgTo: '#4A1A4A',
-      image: '/characters/region_antwerp.png',
+      image: '/characters/region_antwerp.jpg',
     },
     stats: {
       worldRank: '유럽 2위, 세계 13위 컨테이너항',
@@ -949,7 +949,7 @@ export const REGION_DATA = {
       quote: '"조호르의 문을 열면, 세계가 들어온다."',
       bgFrom: '#0A1A0A',
       bgTo: '#1A4A2A',
-      image: '/characters/region_tanjung_pelepas.png',
+      image: '/characters/region_tanjung_pelepas.jpg',
     },
     stats: {
       worldRank: '세계 15위 컨테이너항',
@@ -980,7 +980,7 @@ export const REGION_DATA = {
       quote: '"바다는 경계가 없다. 내 함대가 닿는 곳이 중화의 땅이다."',
       bgFrom: '#0A1A2D',
       bgTo: '#1A3D5F',
-      image: '/characters/region_xiamen.png',
+      image: '/characters/region_xiamen.jpg',
     },
     stats: {
       worldRank: '세계 16위 컨테이너항',
@@ -1011,7 +1011,7 @@ export const REGION_DATA = {
       quote: '"대만은 바다로 태어난 나라다. 우리의 미래는 세계와 교역하는 것이다."',
       bgFrom: '#0A1A2D',
       bgTo: '#1A3A5F',
-      image: '/characters/region_kaohsiung.png',
+      image: '/characters/region_kaohsiung.jpg',
     },
     stats: {
       worldRank: '세계 17위 컨테이너항',
@@ -1043,7 +1043,7 @@ export const REGION_DATA = {
       quote: '"문명은 항구에서 온다. 문을 열어야 나라가 산다."',
       bgFrom: '#1A0A00',
       bgTo: '#4A2000',
-      image: '/characters/region_laem_chabang.png',
+      image: '/characters/region_laem_chabang.jpg',
     },
     stats: {
       worldRank: '세계 18위 컨테이너항',
@@ -1074,7 +1074,7 @@ export const REGION_DATA = {
       quote: '"우리는 이 섬들의 바다에서 태어났다. 독립은 바다처럼 자유롭다."',
       bgFrom: '#1A0A0A',
       bgTo: '#4A1515',
-      image: '/characters/region_jakarta.png',
+      image: '/characters/region_jakarta.jpg',
     },
     stats: {
       worldRank: '세계 21위 컨테이너항',
@@ -1105,7 +1105,7 @@ export const REGION_DATA = {
       quote: '"바다가 선물을 가져다주듯, 지혜로운 왕은 천하와 교역한다."',
       bgFrom: '#1A0A1A',
       bgTo: '#4A1A3A',
-      image: '/characters/region_colombo.png',
+      image: '/characters/region_colombo.jpg',
     },
     stats: {
       worldRank: '세계 22위 컨테이너항 (인도양 최대 환적항)',
@@ -1137,7 +1137,7 @@ export const REGION_DATA = {
       quote: '"자유로운 땅 위에 세워진 도시는 자유로운 무역으로 번성한다."',
       bgFrom: '#0A1A0A',
       bgTo: '#1A4A1A',
-      image: '/characters/region_savannah.png',
+      image: '/characters/region_savannah.jpg',
     },
     stats: {
       worldRank: '미국 2위, 세계 약 25위 컨테이너항',
@@ -1169,7 +1169,7 @@ export const REGION_DATA = {
       quote: '"아무것도 자유보다 소중하지 않다. 독립과 자유를 위해 싸운다."',
       bgFrom: '#1A0A0A',
       bgTo: '#5C1A1A',
-      image: '/characters/region_hochiminhcity.png',
+      image: '/characters/region_hochiminhcity.jpg',
     },
     stats: {
       worldRank: '세계 20위 컨테이너항',
