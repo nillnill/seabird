@@ -102,7 +102,7 @@ async function runMasterAgent() {
           data_points: r.data_points,
         })),
       }),
-      maxTokens: 1500,
+      maxTokens: 3000,  // 5개 섹션 detail + data_points → truncation 방지
       model: 'claude-sonnet-4-6',
     });
 

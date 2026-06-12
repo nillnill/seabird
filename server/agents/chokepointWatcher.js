@@ -134,7 +134,7 @@ async function runChokepointWatcher() {
           severity: s.severity,
         })),
       }),
-      maxTokens: 4000,  // 최대 7개 보고를 한 응답에 담음
+      maxTokens: 6000,  // 최대 7개 보고를 한 응답에 담음 (truncation 방지 여유)
       model: 'claude-haiku-4-5',
     });
     for (const r of result.reports ?? []) {

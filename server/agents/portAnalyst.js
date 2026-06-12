@@ -163,7 +163,7 @@ async function runPortAnalyst() {
         triggered_count: triggeredPorts.length,
         expected_severity: severity,
       }),
-      maxTokens: 1500,
+      maxTokens: 4000,  // 30개 항만 마크다운 표 + 분석 → truncation 방지
       model: 'claude-haiku-4-5',
     });
 
