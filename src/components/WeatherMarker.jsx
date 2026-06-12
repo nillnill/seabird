@@ -31,18 +31,24 @@ export class WeatherMarkers {
       const title = `${p.name}: ${p.desc} · 돌풍 ${p.gust}m/s`;
       const existing = this.markers[p.id];
       if (existing) {
-        existing.el.textContent = p.emoji;
-        existing.el.className = `weather-marker severity-${p.severity}`;
+        existing.inner.textContent = p.emoji;
+        existing.inner.className = `weather-emoji severity-${p.severity}`;
         existing.el.title = title;
       } else {
+        // 바깥 el = Mapbox가 위치 transform 독점 (애니메이션 금지)
         const el = document.createElement('div');
-        el.className = `weather-marker severity-${p.severity}`;
-        el.textContent = p.emoji;
+        el.className = 'weather-marker';
         el.title = title;
+        // 안쪽 inner = 이모지 + 애니메이션(transform) 적용
+        const inner = document.createElement('div');
+        inner.className = `weather-emoji severity-${p.severity}`;
+        inner.textContent = p.emoji;
+        el.appendChild(inner);
+
         const marker = new mapboxgl.Marker({ element: el, offset: [0, -20] })
           .setLngLat([p.lng, p.lat])
           .addTo(this.map);
-        this.markers[p.id] = { marker, el };
+        this.markers[p.id] = { marker, el, inner };
       }
     });
   }

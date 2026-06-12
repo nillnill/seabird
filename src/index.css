@@ -62,20 +62,25 @@ body {
   100% { box-shadow: 0 0 0 0 rgba(234, 179, 8, 0); }
 }
 
-/* Weather emoji markers */
+/* Weather emoji markers
+   바깥 .weather-marker 엘리먼트의 transform은 Mapbox가 위치 고정에 사용하므로
+   건드리지 않는다. 애니메이션은 반드시 안쪽 .weather-emoji 에만 적용. */
 .weather-marker {
-  font-size: 20px;
-  line-height: 1;
   cursor: pointer;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
   user-select: none;
 }
 
-.weather-marker.severity-WARNING {
+.weather-emoji {
+  font-size: 20px;
+  line-height: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+}
+
+.weather-emoji.severity-WARNING {
   animation: weather-bob 2.5s ease-in-out infinite;
 }
 
-.weather-marker.severity-CRITICAL {
+.weather-emoji.severity-CRITICAL {
   font-size: 24px;
   animation: weather-spin 3s linear infinite;
 }
