@@ -4,11 +4,17 @@ import { REGION_DATA } from '../data/regionData.js';
 
 const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
 
-const TABS = [
+const TABS_BASE = [
   { id: 'stats',   label: '현황' },
   { id: 'history', label: '역사' },
   { id: 'news',    label: '뉴스' },
 ];
+// 항만은 '선박 동향' 탭 추가 (현황 다음)
+function tabsFor(type) {
+  return type === 'port'
+    ? [TABS_BASE[0], { id: 'traffic', label: '선박 동향' }, ...TABS_BASE.slice(1)]
+    : TABS_BASE;
+}
 
 function ComparisonGauge({ label, current, baseline, unit, higherIsBad = true }) {
   const pct = baseline > 0 ? Math.round(((current - baseline) / baseline) * 100) : 0;
@@ -34,6 +40,62 @@ function ComparisonGauge({ label, current, baseline, unit, higherIsBad = true })
         <span>현재 {current}{unit}</span>
         <span>평년 {baseline}{unit}</span>
       </div>
+    </div>
+  );
+}
+
+// 상태 세분화 가로 막대 (정박/대기/기동/항행)
+const STATUS_COLOR = {
+  berthed: 'bg-slate-400/70',
+  waiting: 'bg-amber-400/70',
+  maneuvering: 'bg-sky-400/70',
+  transit: 'bg-emerald-400/70',
+};
+function StatusBreakdown({ items, total }) {
+  const max = Math.max(1, ...items.map(i => i.count));
+  return (
+    <div className="space-y-1.5">
+      {/* 누적 비율 바 */}
+      <div className="flex h-2 rounded overflow-hidden bg-white/8">
+        {items.map(i => i.count > 0 && (
+          <div
+            key={i.key}
+            className={STATUS_COLOR[i.key] ?? 'bg-white/40'}
+            style={{ width: `${total ? (i.count / total) * 100 : 0}%` }}
+            title={`${i.label} ${i.count}척`}
+          />
+        ))}
+      </div>
+      {items.map(i => (
+        <div key={i.key} className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-sm shrink-0 ${STATUS_COLOR[i.key] ?? 'bg-white/40'}`} />
+          <span className="text-[10px] text-white/70 w-20 shrink-0">{i.label}</span>
+          <div className="flex-1 h-1 bg-white/8 rounded overflow-hidden">
+            <div className={`h-full rounded ${STATUS_COLOR[i.key] ?? 'bg-white/40'}`} style={{ width: `${(i.count / max) * 100}%` }} />
+          </div>
+          <span className="text-[10px] font-mono text-white/50 w-10 text-right">{i.count}척</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 범용 분포 막대 (선종/기국/속력)
+function DistBars({ rows, color = 'bg-blue-500/60' }) {
+  const max = Math.max(1, ...rows.map(r => r.count));
+  return (
+    <div className="space-y-1.5">
+      {rows.map(r => (
+        <div key={r.label} className="space-y-0.5">
+          <div className="flex justify-between text-[10px]">
+            <span className="text-white/70">{r.label}</span>
+            <span className="text-white/40 font-mono">{r.count}척{r.pct != null ? ` (${r.pct}%)` : ''}</span>
+          </div>
+          <div className="h-1 bg-white/10 rounded overflow-hidden">
+            <div className={`h-full rounded ${color}`} style={{ width: `${(r.count / max) * 100}%` }} />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -177,7 +239,7 @@ export default function RegionIntelPanel() {
 
         {/* 탭 바 */}
         <div className="flex border-b border-white/10 bg-[#0C111F] shrink-0">
-          {TABS.map(tab => (
+          {tabsFor(data.type).map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -249,7 +311,7 @@ export default function RegionIntelPanel() {
                 <div className="border-t border-white/10 pt-4 space-y-4">
                   <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">📡 실시간 현황 vs 평년</p>
 
-                  {/* 항만: 대기 선박 비교 */}
+                  {/* 항만: 대기 선박 비교 + 상태 세분화 */}
                   {data.type === 'port' && (
                     <>
                       <div className="grid grid-cols-2 gap-2">
@@ -259,7 +321,7 @@ export default function RegionIntelPanel() {
                           <p className="text-[9px] text-white/40">척</p>
                         </div>
                         <div className="bg-white/5 rounded-lg p-3 text-center">
-                          <p className="text-[9px] text-white/40 font-mono">대기 선박</p>
+                          <p className="text-[9px] text-white/40 font-mono">대기(정박+정박지)</p>
                           <p className="text-2xl font-bold font-mono text-white">{liveStats.waiting_ships}</p>
                           <p className="text-[9px] text-white/40">평년 {liveStats.baseline_waiting}척</p>
                         </div>
@@ -271,6 +333,12 @@ export default function RegionIntelPanel() {
                         unit="척"
                         higherIsBad={true}
                       />
+                      {liveStats.status_breakdown?.length > 0 && (
+                        <div className="space-y-1.5 pt-1">
+                          <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">상태 세분화</p>
+                          <StatusBreakdown items={liveStats.status_breakdown} total={liveStats.total_ships} />
+                        </div>
+                      )}
                     </>
                   )}
 
@@ -292,24 +360,82 @@ export default function RegionIntelPanel() {
                     </>
                   )}
 
+                  {/* 선종 분포 (초크포인트 — 항만은 '선박 동향' 탭으로 이동) */}
+                  {data.type === 'chokepoint' && liveStats.vessel_type_dist?.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">선종 분포</p>
+                      <DistBars rows={liveStats.vessel_type_dist.slice(0, 4).map(v => ({ label: v.type, count: v.count, pct: v.pct }))} />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── 선박 동향 탭 (항만 전용) ── */}
+          {activeTab === 'traffic' && (
+            <div className="p-4 space-y-5">
+              {!liveStats ? (
+                <div className="flex flex-col items-center justify-center py-10 gap-3">
+                  <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  <p className="text-[11px] text-white/40">실시간 집계 중...</p>
+                </div>
+              ) : (
+                <>
+                  {/* 입출항 추정 */}
+                  <div className="space-y-2">
+                    <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">🚢 입출항 추정 (항행 중 {liveStats.traffic?.moving ?? 0}척)</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 text-center">
+                        <p className="text-[9px] text-emerald-300/80 font-mono">⚓ 입항</p>
+                        <p className="text-2xl font-bold font-mono text-emerald-300">{liveStats.traffic?.inbound ?? 0}</p>
+                      </div>
+                      <div className="bg-sky-500/10 border border-sky-500/20 rounded-lg p-3 text-center">
+                        <p className="text-[9px] text-sky-300/80 font-mono">⬆ 출항</p>
+                        <p className="text-2xl font-bold font-mono text-sky-300">{liveStats.traffic?.outbound ?? 0}</p>
+                      </div>
+                      <div className="bg-white/5 border border-white/10 rounded-lg p-3 text-center">
+                        <p className="text-[9px] text-white/40 font-mono">↔ 통과</p>
+                        <p className="text-2xl font-bold font-mono text-white/70">{liveStats.traffic?.passing ?? 0}</p>
+                      </div>
+                    </div>
+                    <p className="text-[9px] text-white/25 leading-snug">
+                      ※ AIS 항행상태·목적지 미수신 → 진행방향(COG)이 항구를 향하면 입항, 반대면 출항으로 추정. 정박·저속 선박 제외.
+                    </p>
+                  </div>
+
                   {/* 선종 분포 */}
                   {liveStats.vessel_type_dist?.length > 0 && (
                     <div className="space-y-1.5">
                       <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">선종 분포</p>
-                      {liveStats.vessel_type_dist.slice(0, 4).map(({ type, count, pct }) => (
-                        <div key={type} className="space-y-0.5">
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-white/70">{type}</span>
-                            <span className="text-white/40 font-mono">{count}척 ({pct}%)</span>
-                          </div>
-                          <div className="h-0.5 bg-white/10 rounded overflow-hidden">
-                            <div className="h-full bg-blue-500/60 rounded" style={{ width: `${pct}%` }} />
-                          </div>
-                        </div>
-                      ))}
+                      <DistBars rows={liveStats.vessel_type_dist.slice(0, 6).map(v => ({ label: v.type, count: v.count, pct: v.pct }))} />
                     </div>
                   )}
-                </div>
+
+                  {/* 기국 Top */}
+                  {liveStats.flag_dist?.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">기국 Top</p>
+                      <DistBars rows={liveStats.flag_dist.slice(0, 6).map(f => ({ label: f.flag, count: f.count, pct: f.pct }))} color="bg-violet-500/60" />
+                    </div>
+                  )}
+
+                  {/* 속력 분포 */}
+                  {liveStats.speed_hist?.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">속력 분포</p>
+                      <DistBars rows={liveStats.speed_hist.map(s => ({ label: s.label, count: s.count }))} color="bg-cyan-500/60" />
+                    </div>
+                  )}
+
+                  {/* 평균 흘수 */}
+                  {liveStats.avg_draught != null && (
+                    <div className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2">
+                      <span className="text-[10px] text-white/50 font-mono">평균 흘수</span>
+                      <span className="text-[11px] text-white/80 font-mono">{liveStats.avg_draught}m <span className="text-white/30">({liveStats.draught_samples}척 표본)</span></span>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}

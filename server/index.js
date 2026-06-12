@@ -436,6 +436,17 @@ app.post('/api/orchestrate', async (req, res) => {
 
 function nmToDegServer(nm) { return nm / 60; }
 
+// 두 좌표 간 방위(도, 0=북). 선박 위치 → 항구 중심 방향 계산에 사용.
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  const toRad = d => (d * Math.PI) / 180;
+  const φ1 = toRad(lat1), φ2 = toRad(lat2), Δλ = toRad(lon2 - lon1);
+  const y = Math.sin(Δλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+// 두 방위 사이 최소 각도차(0~180)
+function angleDiff(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+
 app.get('/api/port-stats', async (req, res) => {
   const { portId } = req.query;
   const port = PORTS?.find(p => p.id === portId);
@@ -446,21 +457,49 @@ app.get('/api/port-stats', async (req, res) => {
     const cutoff = new Date(Date.now() - 3600000).toISOString();
 
     const { data: ships } = await supabase.from('ships')
-      .select('vessel_type, flag_country, speed')
+      .select('vessel_type, flag_country, speed, course, heading, lat, lng, draught')
       .gte('lat', port.lat - deg).lte('lat', port.lat + deg)
       .gte('lng', port.lng - deg).lte('lng', port.lng + deg)
       .gte('updated_at', cutoff);
 
     const vesselTypeDist = {};
     const flagDist = {};
-    let waitingCount = 0;
+    // 상태 세분화 (nav_status 미수신 → speed 기반). waiting=정박+대기(≤2kn)로 평년 게이지와 일치.
+    const status = { berthed: 0, waiting: 0, maneuvering: 0, transit: 0 };
+    // 입출항 추정 (heading/course 방위 기반, 항행 중 ≥3kn 선박만)
+    const traffic = { inbound: 0, outbound: 0, passing: 0, moving: 0 };
+    // 속력 히스토그램
+    const speedHist = { berth: 0, slow: 0, cruise: 0, fast: 0 };
+    let draughtSum = 0, draughtN = 0;
+
     (ships ?? []).forEach(s => {
       const type = s.vessel_type || 'Other';
       vesselTypeDist[type] = (vesselTypeDist[type] || 0) + 1;
       if (s.flag_country) flagDist[s.flag_country] = (flagDist[s.flag_country] || 0) + 1;
-      if ((s.speed ?? 0) <= 2.0) waitingCount++;
+
+      const sp = s.speed ?? 0;
+      if (sp < 0.5) { status.berthed++; speedHist.berth++; }
+      else if (sp <= 2.0) { status.waiting++; speedHist.slow++; }
+      else if (sp < 5.0) { status.maneuvering++; speedHist.slow++; }
+      else { status.transit++; if (sp < 10) speedHist.cruise++; else speedHist.fast++; }
+
+      // 항행 중 선박의 진행방향(COG 우선, 없으면 heading) vs 항구 방위로 입/출항 판정
+      if (sp >= 3 && s.lat != null && s.lng != null) {
+        const cog = s.course ?? s.heading;
+        if (cog != null) {
+          traffic.moving++;
+          const toPort = bearingDeg(s.lat, s.lng, port.lat, port.lng);
+          const diff = angleDiff(cog, toPort);
+          if (diff < 70) traffic.inbound++;
+          else if (diff > 110) traffic.outbound++;
+          else traffic.passing++;
+        }
+      }
+
+      if (s.draught != null && s.draught > 0) { draughtSum += s.draught; draughtN++; }
     });
     const total = ships?.length ?? 0;
+    const waitingCount = status.berthed + status.waiting;
 
     const { data: reports } = await supabase.from('agent_reports')
       .select('id, severity, title, summary, created_at')
@@ -476,6 +515,26 @@ app.get('/api/port-stats', async (req, res) => {
       total_ships: total,
       waiting_ships: waitingCount,
       baseline_waiting: baselineWaiting,
+      status_breakdown: [
+        { key: 'berthed',     label: '정박·계류',  count: status.berthed },
+        { key: 'waiting',     label: '대기·정박지', count: status.waiting },
+        { key: 'maneuvering', label: '입출항 기동', count: status.maneuvering },
+        { key: 'transit',     label: '항행 중',     count: status.transit },
+      ],
+      traffic: {
+        inbound: traffic.inbound,
+        outbound: traffic.outbound,
+        passing: traffic.passing,
+        moving: traffic.moving,
+      },
+      speed_hist: [
+        { key: 'berth',  label: '정박(<0.5kn)',  count: speedHist.berth },
+        { key: 'slow',   label: '저속(0.5–5kn)', count: speedHist.slow },
+        { key: 'cruise', label: '항행(5–10kn)',  count: speedHist.cruise },
+        { key: 'fast',   label: '고속(>10kn)',   count: speedHist.fast },
+      ],
+      avg_draught: draughtN ? Math.round((draughtSum / draughtN) * 10) / 10 : null,
+      draught_samples: draughtN,
       vessel_type_dist: Object.entries(vesselTypeDist)
         .sort((a, b) => b[1] - a[1])
         .map(([type, count]) => ({ type, count, pct: total ? Math.round(count / total * 100) : 0 })),

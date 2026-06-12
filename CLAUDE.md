@@ -77,7 +77,7 @@ seabird/
     │   ├── PortMarker.jsx     ← 30개 항만 GL 레이어 (circle + symbol, hover 라벨)
     │   ├── ChokepointMarker.jsx ← 7개 초크포인트 HTML 마커 (severity pulse 애니메이션)
     │   ├── WeatherMarker.jsx  ← 날씨 이모지 마커 13개 해역 (WEATHER_AGENT raw_data.points 연동)
-    │   ├── RegionIntelPanel.jsx ← 지역 인텔 모달 (Civ7 스타일, 3탭: 현황/역사/뉴스, 캐릭터 이미지 지원)
+    │   ├── RegionIntelPanel.jsx ← 지역 인텔 모달 (Civ7 스타일, 탭: 현황/[선박 동향(항만 전용)]/역사/뉴스, 캐릭터 이미지 지원). 현황=상태 세분화(정박/대기/기동/항행)+평년, 선박 동향=입출항 추정·선종·기국·속력 분포
     │   ├── CommandFeed.jsx    ← 오른쪽 패널 전체
     │   ├── CommanderInput.jsx ← 자연어 입력창
     │   ├── ReportCard.jsx     ← 에이전트 보고 카드 (MASTER_AGENT: 보라색)
@@ -131,8 +131,11 @@ CARGO ESTIMATOR (선박 클릭)
 REGION INTEL (항만·초크포인트 클릭 → RegionIntelPanel)
 브라우저 → GET /api/port-stats?portId={id} 또는 /api/chokepoint-stats?cpId={id}
         → 서버가 ships 테이블(최근 1h updated_at)을 BoundingBox 집계 → 실시간 현황 vs 평년 게이지
+        → port-stats는 한 번에 status_breakdown(상태 세분화)·traffic(입출항 추정)·speed_hist·avg_draught까지 반환
+          (현황 탭 + 선박 동향 탭이 같은 응답을 공유, 탭 전환 시 추가 요청 없음)
 브라우저 → (뉴스 탭) GET /api/region-news?id={id}&type={type} → Perplexity 영문 검색 → Claude 한국어 번역
 ※ 실시간 현황이 전부 0이면 ships 테이블에 신선한 행이 없다는 뜻 — upsert 실패(아래 nav_status 이슈) 또는 AIS 커버리지 공백을 의심.
+※ 상태/입출항 파생 지표는 nav_status·destination이 aisstream 무료 티어에서 거의 비어 있어(각 0%·~3%) 100% 채워지는 speed·heading(COG)으로 추정한다: 상태=속력대 구간(정박<0.5 / 대기≤2 / 기동<5 / 항행≥5kn), 입출항=항행 중(≥3kn) 선박의 COG가 항구 중심을 향하면 입항·반대면 출항.
 
 SHIP TRACK (선박 클릭 → 항적 탭)
 브라우저 → GET /api/ship-track?mmsi={mmsi} → 서버(service_role) → ship_positions 조회 → { positions: [...] }
