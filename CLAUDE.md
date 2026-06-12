@@ -97,7 +97,7 @@ seabird/
     ├── utils/
     │   ├── claudeClient.js    ← (현재 미사용 — 에이전트가 서버로 이동됨)
     │   ├── supabaseClient.js  ← Supabase 클라이언트 싱글턴
-    │   ├── aisParser.js       ← AIS 메시지 → GeoJSON Feature, mmsiToFlag, mapAISTypeToCategory
+    │   ├── aisParser.js       ← AIS 메시지 → GeoJSON Feature, mmsiToFlag(MID_TO_FLAG 표준 테이블, server와 동기화), mapAISTypeToCategory. flag는 위치보고에도 채움 → 통계/마커 국적 커버리지 ~100%
     │   └── geoUtils.js        ← distanceNm, nmToDeg 등
     │
     └── data/
