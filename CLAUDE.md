@@ -52,6 +52,7 @@ seabird/
 │   ├── .env                   ← 서버 환경변수 (git 제외)
 │   ├── agents/
 │   │   ├── claudeClient.js    ← Node.js 전용 Claude API 래퍼
+│   │   ├── baselineUtils.js   ← 평년(baseline) 산출 공유 정책 resolveBaseline() — 항만·초크포인트 공용
 │   │   ├── portAnalyst.js     ← 10분 폴링, Haiku, 30개 항만 combined
 │   │   ├── chokepointWatcher.js ← 5분 폴링, Haiku, 7개 초크포인트 combined
 │   │   ├── geopoliticalLinker.js ← 15분 폴링, Sonnet, Perplexity 영문검색 → 한국어 번역
@@ -349,7 +350,7 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 11. **AIS 유휴 워치독**: aisstream WebSocket이 half-open(좀비)되면 `close`가 안 떠 재연결이 안 됨 → 서버가 조용히 수신 중단. `index.js`가 60초 무수신 시 소켓을 강제 종료해 재연결한다.
 12. **Render 배포 시 Supabase 키**: `seabird-server`의 `SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_URL`(render.yaml에서 `sync:false`)을 Render 대시보드에 **로컬 `server/.env`와 동일하게** 설정해야 함. 키가 잘못되면 서버의 모든 Supabase 작업이 `{"error":"Invalid API key"}`로 실패(항적·DB 쓰기 전부 불가)하나, AIS relay와 프론트 anon 읽기는 동작해 증상이 가려짐.
 13. **초크포인트 "통과 선박"은 통항량이 아니라 스냅샷**: `/api/chokepoint-stats`·`chokepointWatcher`의 카운트는 "해당 bbox 안에 최근 1h 내 위치가 잡힌 선박 수"(순간 스냅샷)이지, 1시간 동안 통과한 누적 통항량이 아니다. 그래서 bbox 크기·AIS 커버리지에 따라 절대값이 크게 다르다(말라카 큰 박스 = 수백, 호르무즈 무수신 ≈ 0).
-14. **평년(baseline) 산출 정책 — `resolveBaseline()`**: `chokepointWatcher.js`에 공유 헬퍼. `baselines`의 `daily_throughput` 이력에서 **0 스냅샷(수집 공백)을 제외**한 실측 표본이 **48개 이상 + 24h 이상 분포**할 때만 그 평균을 동적 평년으로 쓰고, 그 전엔 `HARDCODED_BASELINE`(수에즈 58·말라카 247 등)을 쓴다. 엔드포인트와 에이전트가 같은 헬퍼를 공유. (과거: 동적 `avg_90d`가 마이그레이션 이전 0들로 오염돼 평년이 0.1~7.1로 나오던 버그를 이 정책으로 차단. `baselinesWriter`의 `avg_90d` 컬럼은 이제 소비되지 않고 이력 기록용.)
+14. **평년(baseline) 산출 정책 — `agents/baselineUtils.js` `resolveBaseline(db, locationId, metric, hardcoded)`**: 항만·초크포인트 공용 헬퍼. `baselines`의 해당 metric 이력에서 **0 스냅샷(수집 공백)을 제외**한 실측 표본이 **48개 이상 + 24h 이상 분포**할 때만 그 평균을 동적 평년으로 쓰고, 그 전엔 하드코딩 기준값(초크포인트: 수에즈 58·말라카 247 등 / 항만: 부산 12·싱가포르 45 등)을 쓴다. **4곳이 동일 정책 공유** — `/api/chokepoint-stats`·`chokepointWatcher`(metric=`daily_throughput`), `/api/port-stats`·`portAnalyst`(metric=`waiting_ships`). (과거: 동적 `avg_90d`가 마이그레이션 이전 0들로 오염돼 평년이 0.1~16.5로 나오고, 항만은 패널=하드코딩/에이전트=오염 avg_90d로 따로 놀던 버그를 이 정책으로 통일·차단. `baselinesWriter`의 `avg_90d` 컬럼은 이제 소비되지 않고 이력 기록용.)
 
 ---
 

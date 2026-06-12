@@ -1,5 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { callClaude } = require('./claudeClient');
+const { resolveBaseline } = require('./baselineUtils');
 
 const POLL_INTERVAL_MS = 10 * 60 * 1000;
 
@@ -103,16 +104,8 @@ async function runPortAnalyst() {
     const ships = await queryPortShips(port);
     const waitingShips = ships.filter(s => (s.speed ?? 0) <= 2.0);
 
-    const { data: baselineRow } = await db
-      .from('baselines')
-      .select('avg_90d')
-      .eq('location_id', port.id)
-      .eq('metric', 'waiting_ships')
-      .order('snapshot_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    const avg90d = baselineRow?.avg_90d ?? HARDCODED_BASELINE[port.id] ?? 10;
+    // 평년: 충분한 실측 이력이 쌓이면 동적 평균, 그 전엔 하드코딩 기준값 (baselineUtils 공유 정책)
+    const avg90d = await resolveBaseline(db, port.id, 'waiting_ships', HARDCODED_BASELINE[port.id] ?? 10);
     const changePct = avg90d > 0 ? Math.round(((waitingShips.length - avg90d) / avg90d) * 100) : 0;
     const waitHours = waitingShips.length * 0.5;
 

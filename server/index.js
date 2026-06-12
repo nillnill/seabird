@@ -6,7 +6,8 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
 const { startPortAnalyst, runPortAnalyst, PORTS, HARDCODED_BASELINE: PORT_BASELINE } = require('./agents/portAnalyst');
-const { startChokepointWatcher, runChokepointWatcher, CHOKEPOINTS, resolveBaseline } = require('./agents/chokepointWatcher');
+const { startChokepointWatcher, runChokepointWatcher, CHOKEPOINTS, HARDCODED_BASELINE: CP_BASELINE } = require('./agents/chokepointWatcher');
+const { resolveBaseline } = require('./agents/baselineUtils');
 const { startBaselinesWriter } = require('./agents/baselinesWriter');
 const { startGeopoliticalLinker, runGeopoliticalLinker } = require('./agents/geopoliticalLinker');
 const { startWeatherAgent } = require('./agents/weatherAgent');
@@ -467,11 +468,14 @@ app.get('/api/port-stats', async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(3);
 
+    // 평년: 충분한 실측 이력이 쌓이면 동적 평균, 그 전엔 하드코딩 기준값 (chokepoint와 동일 정책)
+    const baselineWaiting = await resolveBaseline(supabase, port.id, 'waiting_ships', PORT_BASELINE?.[port.id] ?? 10);
+
     res.json({
       port: { id: port.id, name: port.name, lat: port.lat, lng: port.lng },
       total_ships: total,
       waiting_ships: waitingCount,
-      baseline_waiting: PORT_BASELINE?.[port.id] ?? 10,
+      baseline_waiting: baselineWaiting,
       vessel_type_dist: Object.entries(vesselTypeDist)
         .sort((a, b) => b[1] - a[1])
         .map(([type, count]) => ({ type, count, pct: total ? Math.round(count / total * 100) : 0 })),
@@ -505,7 +509,7 @@ app.get('/api/chokepoint-stats', async (req, res) => {
     const total = (ships ?? []).length;
 
     // 평년: 충분한 실측 이력이 쌓이면 동적 평균, 그 전엔 하드코딩 기준값 (chokepointWatcher와 동일 정책)
-    const baseline = await resolveBaseline(supabase, cpId);
+    const baseline = await resolveBaseline(supabase, cpId, 'daily_throughput', CP_BASELINE?.[cpId] ?? 50);
     const change_pct = baseline > 0 ? Math.round(((total - baseline) / baseline) * 100) : 0;
 
     const typeDist = {};
