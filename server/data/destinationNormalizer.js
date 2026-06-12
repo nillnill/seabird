@@ -2,7 +2,7 @@
 // 입력 예: "BUSAN", "BUSAN KOREA", "KRPUS", "NL RTM", "PLGDY", "FOR ORDERS", "FISHING"
 // 출력: { raw, country(ISO3|null), countryKo, port(표시명|null), category }
 //   category: 'port'(항구/국가 식별됨) | 'other'(작업·미항구) | 'unknown'(미식별) | 'none'(빈값)
-// ※ src/utils/destinationNormalizer.js (ESM)에서 자동 생성됨 — 직접 수정 금지, ESM 수정 후 재생성.
+// ※ src/utils/destinationNormalizer.js (ESM)에서 자동 생성됨 — 직접 수정 금지.
 
 // ISO2(LOCODE 앞 2자) → { iso3, ko }. 주요 해운국 중심.
 const ISO2 = {
@@ -20,6 +20,7 @@ const ISO2 = {
   NL:{iso3:'NLD',ko:'네덜란드'}, BE:{iso3:'BEL',ko:'벨기에'}, LU:{iso3:'LUX',ko:'룩셈부르크'}, ES:{iso3:'ESP',ko:'스페인'},
   PT:{iso3:'PRT',ko:'포르투갈'}, IT:{iso3:'ITA',ko:'이탈리아'}, GR:{iso3:'GRC',ko:'그리스'}, MT:{iso3:'MLT',ko:'몰타'},
   CY:{iso3:'CYP',ko:'키프로스'}, HR:{iso3:'HRV',ko:'크로아티아'}, SI:{iso3:'SVN',ko:'슬로베니아'}, ME:{iso3:'MNE',ko:'몬테네그로'},
+  MC:{iso3:'MCO',ko:'모나코'}, IM:{iso3:'IMN',ko:'맨섬'},
   CH:{iso3:'CHE',ko:'스위스'}, AT:{iso3:'AUT',ko:'오스트리아'}, PL:{iso3:'POL',ko:'폴란드'}, CZ:{iso3:'CZE',ko:'체코'},
   SK:{iso3:'SVK',ko:'슬로바키아'}, HU:{iso3:'HUN',ko:'헝가리'}, RO:{iso3:'ROU',ko:'루마니아'}, BG:{iso3:'BGR',ko:'불가리아'},
   DK:{iso3:'DNK',ko:'덴마크'}, NO:{iso3:'NOR',ko:'노르웨이'}, SE:{iso3:'SWE',ko:'스웨덴'}, FI:{iso3:'FIN',ko:'핀란드'},
@@ -105,6 +106,76 @@ const PORTS = {
   MOMBASA:{c:'KE',n:'몸바사'}, TEMA:{c:'GH',n:'테마'}, ABIDJAN:{c:'CI',n:'아비장'}, PORTLOUIS:{c:'MU',n:'포트루이스'},
   SYDNEY:{c:'AU',n:'시드니'}, MELBOURNE:{c:'AU',n:'멜버른'}, AUMEL:{c:'AU',n:'멜버른'}, BRISBANE:{c:'AU',n:'브리즈번'},
   FREMANTLE:{c:'AU',n:'프리맨틀'}, AUFRE:{c:'AU',n:'프리맨틀'}, AUCKLAND:{c:'NZ',n:'오클랜드(NZ)'}, NZAKL:{c:'NZ',n:'오클랜드(NZ)'},
+
+  // ── 군소·지역항 (실측 미식별 상위값 기반) ──
+  // 네덜란드 내륙·연안
+  HARLINGEN:{c:'NL',n:'하를링언'}, 'DEN HELDER':{c:'NL',n:'덴헬더르'}, DRACHTEN:{c:'NL',n:'드라흐턴'}, ALKMAAR:{c:'NL',n:'알크마르'},
+  URK:{c:'NL',n:'위르크'}, WERKENDAM:{c:'NL',n:'베르켄담'}, NIJMEGEN:{c:'NL',n:'네이메헌'}, MEPPEL:{c:'NL',n:'메펄'},
+  SCHEVENINGEN:{c:'NL',n:'스헤베닝언'}, MUIDEN:{c:'NL',n:'마위던'}, DORDRECHT:{c:'NL',n:'도르드레흐트'}, STELLENDAM:{c:'NL',n:'스텔런담'},
+  EUROPOORT:{c:'NL',n:'외로포르트'}, OOSTERHOUT:{c:'NL',n:'오스테르하우트'}, ELBURG:{c:'NL',n:'엘뷔르흐'}, HAARLEM:{c:'NL',n:'하를럼'},
+  HOORN:{c:'NL',n:'호른'}, ARNHEM:{c:'NL',n:'아른험'}, GRONINGEN:{c:'NL',n:'흐로닝언'}, ENKHUIZEN:{c:'NL',n:'엔크하위전'},
+  LAUWERSOOG:{c:'NL',n:'라우에르소흐'}, BRESKENS:{c:'NL',n:'브레스컨스'}, MAASSLUIS:{c:'NL',n:'마슬라위스'}, TEXEL:{c:'NL',n:'텍설'},
+  DELFZIJL:{c:'NL',n:'델프자일'}, TERNEUZEN:{c:'NL',n:'테르뇌전'}, AZIEHAVEN:{c:'NL',n:'암스테르담'}, MARGRIETHAVEN:{c:'NL',n:'테르뇌전'},
+  IJSSELMEER:{c:'NL',n:'에이설호'}, WADDENZEE:{c:'NL',n:'바덴해'}, HANSWEERT:{c:'NL',n:'한스베르트'}, VEERE:{c:'NL',n:'페러'},
+  // 벨기에
+  OOSTENDE:{c:'BE',n:'오스텐더'}, OSTEND:{c:'BE',n:'오스텐더'}, ZELZATE:{c:'BE',n:'젤자터'}, NIEUWPOORT:{c:'BE',n:'니우포르트'},
+  // 독일 내륙·연안
+  BERLIN:{c:'DE',n:'베를린'}, ROSTOCK:{c:'DE',n:'로스토크'}, DUISBURG:{c:'DE',n:'뒤스부르크'}, PASSAU:{c:'DE',n:'파사우'},
+  STADE:{c:'DE',n:'슈타데'}, BRUNSBUTTEL:{c:'DE',n:'브룬스뷔텔'}, EMDEN:{c:'DE',n:'엠덴'}, LUBECK:{c:'DE',n:'뤼베크'},
+  MANNHEIM:{c:'DE',n:'만하임'}, MAGDEBURG:{c:'DE',n:'마그데부르크'}, KARLSRUHE:{c:'DE',n:'카를스루에'}, KEHL:{c:'DE',n:'켈'},
+  // 노르웨이
+  STAVANGER:{c:'NO',n:'스타방에르'}, TROMSO:{c:'NO',n:'트롬쇠'}, TROMSOE:{c:'NO',n:'트롬쇠'}, MONGSTAD:{c:'NO',n:'몽스타'},
+  SANDNES:{c:'NO',n:'산네스'}, RORVIK:{c:'NO',n:'뢰르비크'}, LOVUND:{c:'NO',n:'로뷘'}, FREDRIKSTAD:{c:'NO',n:'프레드릭스타'},
+  LONGYEARBYEN:{c:'NO',n:'롱위에아르뷔엔'}, KRISTIANSAND:{c:'NO',n:'크리스티안산'}, AALESUND:{c:'NO',n:'올레순'},
+  HAUGESUND:{c:'NO',n:'헤우게순'}, BODO:{c:'NO',n:'보되'}, NARVIK:{c:'NO',n:'나르비크'},
+  // 덴마크·발트
+  SKAGEN:{c:'DK',n:'스카겐'}, ESBJERG:{c:'DK',n:'에스비에르'}, AALBORG:{c:'DK',n:'올보르'}, FREDERICIA:{c:'DK',n:'프레데리시아'},
+  KALUNDBORG:{c:'DK',n:'칼룬보르'},
+  // 영국·아일랜드
+  ABERDEEN:{c:'GB',n:'애버딘'}, BLYTH:{c:'GB',n:'블라이스'}, IMMINGHAM:{c:'GB',n:'이밍엄'}, GRIMSBY:{c:'GB',n:'그림스비'},
+  HULL:{c:'GB',n:'헐'}, PORTSMOUTH:{c:'GB',n:'포츠머스'}, DOUGLAS:{c:'IM',n:'더글러스'}, RINGASKIDDY:{c:'IE',n:'링개스키디'},
+  // 프랑스·모나코
+  ANTIBES:{c:'FR',n:'앙티브'}, 'ST TROPEZ':{c:'FR',n:'생트로페'}, BEAULIEU:{c:'FR',n:'볼리외'}, CANNES:{c:'FR',n:'칸'},
+  NICE:{c:'FR',n:'니스'}, BORDEAUX:{c:'FR',n:'보르도'}, NANTES:{c:'FR',n:'낭트'}, ROUEN:{c:'FR',n:'루앙'},
+  CALAIS:{c:'FR',n:'칼레'}, BREST:{c:'FR',n:'브레스트'}, TOULON:{c:'FR',n:'툴롱'}, SETE:{c:'FR',n:'세트'},
+  MONACO:{c:'MC',n:'모나코'},
+  // 이탈리아
+  AUGUSTA:{c:'IT',n:'아우구스타'}, SIRACUSA:{c:'IT',n:'시라쿠사'}, LIVORNO:{c:'IT',n:'리보르노'}, NAPLES:{c:'IT',n:'나폴리'},
+  NAPOLI:{c:'IT',n:'나폴리'}, SAVONA:{c:'IT',n:'사보나'}, TRIESTE:{c:'IT',n:'트리에스테'}, VENICE:{c:'IT',n:'베네치아'},
+  VENEZIA:{c:'IT',n:'베네치아'}, RAVENNA:{c:'IT',n:'라벤나'}, BARI:{c:'IT',n:'바리'}, SALERNO:{c:'IT',n:'살레르노'},
+  // 스페인
+  'LAS PALMAS':{c:'ES',n:'라스팔마스'}, PALMA:{c:'ES',n:'팔마'}, 'PALMA DE MALLORCA':{c:'ES',n:'팔마'}, BILBAO:{c:'ES',n:'빌바오'},
+  TARRAGONA:{c:'ES',n:'타라고나'}, VIGO:{c:'ES',n:'비고'}, MALAGA:{c:'ES',n:'말라가'}, SANTANDER:{c:'ES',n:'산탄데르'},
+  // 그리스·지중해 동부
+  SYROS:{c:'GR',n:'시로스'}, ATHENS:{c:'GR',n:'아테네'}, 'ATHENS MARINA':{c:'GR',n:'아테네'}, HERAKLION:{c:'GR',n:'이라클리오'},
+  VOLOS:{c:'GR',n:'볼로스'}, PATRAS:{c:'GR',n:'파트라'}, LIMASSOL:{c:'CY',n:'리마솔'}, HAIFA:{c:'IL',n:'하이파'},
+  ASHDOD:{c:'IL',n:'아슈도드'}, VARNA:{c:'BG',n:'바르나'}, BURGAS:{c:'BG',n:'부르가스'}, CONSTANTA:{c:'RO',n:'콘스탄차'},
+  // 중부유럽 내륙
+  BRATISLAVA:{c:'SK',n:'브라티슬라바'}, BASEL:{c:'CH',n:'바젤'},
+  // 미국
+  MIAMI:{c:'US',n:'마이애미'}, BALTIMORE:{c:'US',n:'볼티모어'}, BOSTON:{c:'US',n:'보스턴'}, TACOMA:{c:'US',n:'터코마'},
+  'SAN DIEGO':{c:'US',n:'샌디에이고'}, 'FORT LAUDERDALE':{c:'US',n:'포트로더데일'}, PORTLAND:{c:'US',n:'포틀랜드'},
+  BELLINGHAM:{c:'US',n:'벨링햄'}, BRUNSWICK:{c:'US',n:'브런즈윅'}, PHILADELPHIA:{c:'US',n:'필라델피아'}, MOBILE:{c:'US',n:'모빌'},
+  GALVESTON:{c:'US',n:'갤버스턴'}, TAMPA:{c:'US',n:'탬파'}, JACKSONVILLE:{c:'US',n:'잭슨빌'}, EVERETT:{c:'US',n:'에버렛'},
+  'NEW ORLEANS':{c:'US',n:'뉴올리언스'}, 'CORPUS CHRISTI':{c:'US',n:'코퍼스크리스티'}, 'BATON ROUGE':{c:'US',n:'배턴루지'},
+  // 캐나다
+  'CAMPBELL RIVER':{c:'CA',n:'캠벨리버'}, 'PRINCE RUPERT':{c:'CA',n:'프린스루퍼트'}, HALIFAX:{c:'CA',n:'핼리팩스'}, NANAIMO:{c:'CA',n:'나나이모'},
+  // 호주
+  BUNBURY:{c:'AU',n:'번버리'}, ADELAIDE:{c:'AU',n:'애들레이드'}, 'PORT HEDLAND':{c:'AU',n:'포트헤들랜드'}, GLADSTONE:{c:'AU',n:'글래드스턴'},
+  DAMPIER:{c:'AU',n:'댐피어'}, TOWNSVILLE:{c:'AU',n:'타운즈빌'}, GEELONG:{c:'AU',n:'질롱'},
+  // 동남아 추가
+  PALEMBANG:{c:'ID',n:'팔렘방'},
+};
+
+// 국가명 단어 → ISO2 (LOCODE 휴리스틱보다 먼저 검사해 CHINA→스위스 같은 오분류 방지)
+const COUNTRY_NAMES = {
+  CHINA:'CN', KOREA:'KR', JAPAN:'JP', TAIWAN:'TW', VIETNAM:'VN', THAILAND:'TH', MALAYSIA:'MY',
+  INDONESIA:'ID', PHILIPPINES:'PH', INDIA:'IN', PAKISTAN:'PK', BANGLADESH:'BD',
+  ITALY:'IT', SPAIN:'ES', FRANCE:'FR', GERMANY:'DE', GREECE:'GR', TURKEY:'TR', RUSSIA:'RU',
+  NORWAY:'NO', SWEDEN:'SE', FINLAND:'FI', DENMARK:'DK', POLAND:'PL', PORTUGAL:'PT', MALTA:'MT',
+  CYPRUS:'CY', NETHERLANDS:'NL', BELGIUM:'BE', IRELAND:'IE', ICELAND:'IS', CROATIA:'HR',
+  EGYPT:'EG', MOROCCO:'MA', NIGERIA:'NG', BRAZIL:'BR', MEXICO:'MX', CANADA:'CA', PANAMA:'PA',
+  AUSTRALIA:'AU', ENGLAND:'GB', SCOTLAND:'GB', UK:'GB', USA:'US',
 };
 
 // 비항구(작업·미상) 키워드
@@ -113,6 +184,7 @@ const NONPORT = [
   'TBN','UNKNOWN','PILOT','BUNKER','OFFSHORE','DREDG','PATROL','SURVEY','RESEARCH','LOCAL','COASTAL',
   'ROADS','OPL','DRIFT','STANDBY','WAITING','NONE','TRANSIT','PASSAGE','MILITARY','WARSHIP','NAVY',
   'TUG','TOWING','SUPPLY','WIND FARM','WINDFARM','CABLE','DP ','LAYUP','LAY UP','SCRAP','RECYCL','NOWHERE','TEST',
+  'RONDVAART','CRUISING','TOWAGE','NAAR BETER','SEA TRIAL','TRIAL','DREDGING','TRAINING','EXERCISE',
 ];
 
 function titleCase(s) {
@@ -126,8 +198,9 @@ function blank(raw, category) {
 function normalizeDestination(raw) {
   if (!raw || typeof raw !== 'string') return blank(raw, 'none');
   let s = raw.toUpperCase().trim();
-  // 경로형 "A>B", "A=>B", "A VIA B": 최종 목적지(마지막 구간)만 취함
+  // 경로형 "A>B", "A=>B", "A NAAR B"(네덜란드어 to): 최종 목적지(마지막 구간)만 취함
   if (/[>»]|=>/.test(s)) { const seg = s.split(/=>|[>»]+/).filter(Boolean); if (seg.length) s = seg[seg.length - 1].trim(); }
+  if (/\sNAAR\s/.test(s)) { const seg = s.split(/\sNAAR\s/); s = seg[seg.length - 1].trim(); }
   s = s.replace(/^(FOR|TO|DEST(?:INATION)?|VIA|BOUND FOR)\s+/, '').trim();
   const clean = s.replace(/[^A-Z0-9 \-/]/g, ' ').replace(/\s+/g, ' ').trim();
   if (!clean || clean.length < 2 || /^\d+$/.test(clean)) return blank(raw, 'none');
@@ -139,6 +212,12 @@ function normalizeDestination(raw) {
 
   // 2) 사전 직접 매칭 (전체명 또는 LOCODE)
   let hit = PORTS[clean] || PORTS[compact];
+
+  // 2.5) 국가명 단어 (LOCODE 휴리스틱보다 먼저 — CHINA→스위스 오분류 방지)
+  if (!hit && COUNTRY_NAMES[clean]) {
+    const iso2 = COUNTRY_NAMES[clean];
+    return { raw, country: ISO2[iso2].iso3, countryKo: ISO2[iso2].ko, port: null, category: 'port' };
+  }
 
   // 3) LOCODE 5자 (국가 추출)
   if (!hit && /^[A-Z]{2}[A-Z0-9]{3}$/.test(compact)) {

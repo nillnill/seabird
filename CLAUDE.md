@@ -135,7 +135,7 @@ REGION INTEL (항만·초크포인트 클릭 → RegionIntelPanel)
         → 서버가 ships 테이블(최근 1h updated_at)을 BoundingBox 집계 → 실시간 현황 vs 평년 게이지
         → port-stats는 한 번에 status_breakdown(상태 세분화)·traffic(입출항 추정)·speed_hist·avg_draught·dest_country_dist(목적지 국가, destination 정규화)까지 반환
           (현황 탭 + 선박 동향 탭이 같은 응답을 공유, 탭 전환 시 추가 요청 없음)
-※ destination은 자유텍스트라 파편화 심함(LOCODE/항구명/작업명 혼재) → `destinationNormalizer.normalizeDestination`으로 국가·항구 분류. 코드류(LOCODE)·주요 항구는 분류되고 군소항 긴 꼬리는 'unknown'(원문 표시). 국가 식별 ~46%(샘플 기준), 상위 빈도 목적지는 대부분 분류됨.
+※ destination은 자유텍스트라 파편화 심함(LOCODE/항구명/작업명 혼재) → `destinationNormalizer.normalizeDestination`으로 국가·항구 분류. 코드류(LOCODE)·주요 항구·군소 지역항(NL/NO/DE 내륙항 등)·국가명 단어를 분류하고 나머지 긴 꼬리는 'unknown'(원문 표시). 국가 식별 ~56%(샘플 기준), 상위 빈도 목적지는 대부분 분류됨. ※ 5자 LOCODE 휴리스틱은 드물게 일반 단어를 오분류할 수 있어, COUNTRY_NAMES(국가명)를 먼저 검사.
 브라우저 → (뉴스 탭) GET /api/region-news?id={id}&type={type} → Perplexity 영문 검색 → Claude 한국어 번역
 ※ 실시간 현황이 전부 0이면 ships 테이블에 신선한 행이 없다는 뜻 — upsert 실패(아래 nav_status 이슈) 또는 AIS 커버리지 공백을 의심.
 ※ 상태/입출항 파생 지표는 nav_status·destination이 aisstream 무료 티어에서 거의 비어 있어(각 0%·~3%) 100% 채워지는 speed·heading(COG)으로 추정한다: 상태=속력대 구간(정박<0.5 / 대기≤2 / 기동<5 / 항행≥5kn), 입출항=항행 중(≥3kn) 선박의 COG가 항구 중심을 향하면 입항·반대면 출항.
