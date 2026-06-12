@@ -103,7 +103,7 @@ async function runMasterAgent() {
         })),
       }),
       maxTokens: 1500,
-      model: 'claude-opus-4-8',
+      model: 'claude-sonnet-4-6',
     });
 
     const { error } = await db.from('agent_reports').insert({

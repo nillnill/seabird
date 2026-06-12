@@ -24,21 +24,30 @@ const CHOKEPOINTS = [
   { id: 'bab_el_mandeb', name: '바브엘만데브',   emoji: '🇾🇪', bbox: [[11.5, 43.0], [13.0, 44.5]], centerLat: 12.5, centerLng: 43.5 },
 ];
 
+// 7개 초크포인트를 한 번의 호출로 묶어서 분석 — reports 배열로 응답 (입력 id별 1건)
 const SYSTEM_PROMPT_CP = `You are CHOKEPOINT WATCHER, a maritime intelligence agent.
+
+You receive an ARRAY of chokepoints with current traffic statistics. Analyze EACH one and return one report per chokepoint.
 
 Respond ONLY with valid JSON. Language: Korean. 개조식 마크다운 형식 필수.
 
 {
-  "severity": "INFO|WARNING|CRITICAL",
-  "title": "[초크포인트명] [상태 한 줄]",
-  "summary": "핵심 요약 최대 80자",
-  "detail": "## [이모지] [초크포인트명] — [상태]\\n\\n- **현재 통과**: N척 (평년 X척/일 대비 **±Y%**)\\n- **선종**: 컨테이너 N · 탱커 N · 기타 N\\n\\n## 📌 과거 유사 사례\\n- 관련 사례 (없으면 '특이 이력 없음')\\n\\n## 🇰🇷 공급망 영향\\n- 한국 관련 영향 및 권고",
-  "ai_comment": "분석 코멘트 최대 200자",
-  "data_points": [
-    {"label": "현재 통과", "current": 0, "baseline": 0, "unit": "척", "change_pct": 0, "direction": "DOWN"}
+  "reports": [
+    {
+      "id": "입력 chokepoint의 id를 그대로 복사",
+      "severity": "INFO|WARNING|CRITICAL",
+      "title": "[초크포인트명] [상태 한 줄]",
+      "summary": "핵심 요약 최대 80자",
+      "detail": "## [이모지] [초크포인트명] — [상태]\\n\\n- **현재 통과**: N척 (평년 X척/일 대비 **±Y%**)\\n- **선종**: 컨테이너 N · 탱커 N · 기타 N\\n\\n## 📌 과거 유사 사례\\n- 관련 사례 (없으면 '특이 이력 없음')\\n\\n## 🇰🇷 공급망 영향\\n- 한국 관련 영향 및 권고",
+      "ai_comment": "분석 코멘트 최대 200자",
+      "data_points": [
+        {"label": "현재 통과", "current": 0, "baseline": 0, "unit": "척", "change_pct": 0, "direction": "DOWN"}
+      ]
+    }
   ]
 }
 
+reports 배열은 입력 chokepoints와 동일한 개수로, 각 항목에 입력 id를 반드시 포함하라.
 SEVERITY: CRITICAL = 통과량 -50% 이상, WARNING = -25% 이상, INFO = 정상.
 INFO일 때 detail의 과거 사례/공급망 섹션은 간략하게 '현재 정상 운영 중' 형식으로 작성.
 데이터가 적어도 반드시 분석 의견 제공.`;
@@ -63,10 +72,10 @@ async function queryShipsInBbox(bbox) {
   return data ?? [];
 }
 
-async function processChokepoint(cp, db) {
+// 초크포인트 통계 수집 (결정적 — Claude 미사용)
+async function collectStats(cp, db) {
   const ships = await queryShipsInBbox(cp.bbox);
 
-  // 선종 분포
   const typeDist = {};
   ships.forEach(s => { const t = s.vessel_type || 'Other'; typeDist[t] = (typeDist[t] || 0) + 1; });
 
@@ -81,68 +90,95 @@ async function processChokepoint(cp, db) {
 
   const baseline = baselineRow?.avg_90d ?? HARDCODED_BASELINE[cp.id] ?? 50;
   const changePct = baseline > 0 ? Math.round(((ships.length - baseline) / baseline) * 100) : 0;
-
   const severity = ships.length <= baseline * 0.5 ? 'CRITICAL'
     : ships.length <= baseline * 0.75 ? 'WARNING'
     : 'INFO';
 
-  // 인메모리 dedup 확인
-  const cached = _dedupCache[cp.id];
-  if (cached && cached.severity === severity) {
+  return { cp, ships: ships.length, typeDist, baseline, changePct, severity };
+}
+
+function isDeduped(stat) {
+  const cached = _dedupCache[stat.cp.id];
+  if (cached && cached.severity === stat.severity) {
     const age = Date.now() - cached.ts;
-    const window = DEDUP_WINDOWS[severity] ?? DEDUP_WINDOWS.INFO;
+    const window = DEDUP_WINDOWS[stat.severity] ?? DEDUP_WINDOWS.INFO;
     if (age < window) {
-      console.log(`[CHOKEPOINT_WATCHER] ${cp.id} dedup skip — ${severity} (${Math.round(age / 60000)}min/${Math.round(window / 60000)}min)`);
-      return;
+      console.log(`[CHOKEPOINT_WATCHER] ${stat.cp.id} dedup skip — ${stat.severity} (${Math.round(age / 60000)}min/${Math.round(window / 60000)}min)`);
+      return true;
     }
   }
-
-  try {
-    const result = await callClaude({
-      systemPrompt: SYSTEM_PROMPT_CP,
-      userMessage: JSON.stringify({
-        chokepoint: { id: cp.id, name: cp.name, emoji: cp.emoji },
-        current_ships: ships.length,
-        vessel_type_dist: typeDist,
-        baseline_daily: baseline,
-        change_pct: changePct,
-        severity,
-      }),
-      maxTokens: 1200,
-      model: 'claude-haiku-4-5',
-    });
-
-    const { error } = await db.from('agent_reports').insert({
-      agent_id: 'CHOKEPOINT_WATCHER',
-      severity: result.severity ?? severity,
-      title: result.title,
-      summary: result.summary,
-      detail: result.detail,
-      data_points: result.data_points ?? [],
-      annotations: [result.ai_comment].filter(Boolean),
-      related_mmsi: [],
-      location: { lat: cp.centerLat, lng: cp.centerLng, zoom: 6, chokepoint_id: cp.id },
-      raw_data: { cp_id: cp.id, cp_name: cp.name, ships: ships.length, baseline, change_pct: changePct },
-    });
-    if (error) {
-      console.error(`[CHOKEPOINT_WATCHER] ${cp.id} insert error:`, error.message);
-    } else {
-      const finalSeverity = result.severity ?? severity;
-      console.log(`[CHOKEPOINT_WATCHER] ${cp.id} report saved:`, finalSeverity);
-      _dedupCache[cp.id] = { severity: finalSeverity, ts: Date.now() };
-    }
-  } catch (err) {
-    console.error(`[CHOKEPOINT_WATCHER] ${cp.id} error:`, err.message);
-  }
+  return false;
 }
 
 async function runChokepointWatcher() {
   console.log('[CHOKEPOINT_WATCHER] run at', new Date().toISOString());
   const db = getDb();
 
-  // 순차 처리 (rate limit 방지, dedup은 인메모리 캐시 사용)
+  // 1) 모든 초크포인트 통계 수집 (결정적 계산)
+  const stats = [];
   for (const cp of CHOKEPOINTS) {
-    await processChokepoint(cp, db);
+    stats.push(await collectStats(cp, db));
+  }
+
+  // 2) dedup 통과한 초크포인트만 분석 대상으로 (변화 없으면 제외)
+  const toAnalyze = stats.filter(s => !isDeduped(s));
+  if (toAnalyze.length === 0) {
+    console.log('[CHOKEPOINT_WATCHER] 전부 dedup — Claude 호출 생략');
+    return;
+  }
+
+  // 3) 단일 Claude 호출로 대상 초크포인트 묶음 분석 (7회 → 1회)
+  let reportsById = {};
+  try {
+    const result = await callClaude({
+      systemPrompt: SYSTEM_PROMPT_CP,
+      userMessage: JSON.stringify({
+        chokepoints: toAnalyze.map(s => ({
+          id: s.cp.id, name: s.cp.name, emoji: s.cp.emoji,
+          current_ships: s.ships,
+          vessel_type_dist: s.typeDist,
+          baseline_daily: s.baseline,
+          change_pct: s.changePct,
+          severity: s.severity,
+        })),
+      }),
+      maxTokens: 4000,  // 최대 7개 보고를 한 응답에 담음
+      model: 'claude-haiku-4-5',
+    });
+    for (const r of result.reports ?? []) {
+      if (r.id) reportsById[r.id] = r;
+    }
+  } catch (err) {
+    console.error('[CHOKEPOINT_WATCHER] claude error:', err.message);
+    return;  // 분석 실패 시 이번 사이클 건너뜀
+  }
+
+  // 4) 초크포인트별 보고 행 저장 (프론트 마커가 per-chokepoint 행을 소비하므로 유지)
+  for (const s of toAnalyze) {
+    const r = reportsById[s.cp.id];
+    if (!r) {
+      console.warn(`[CHOKEPOINT_WATCHER] ${s.cp.id} — Claude 응답 누락, 스킵`);
+      continue;
+    }
+    const finalSeverity = r.severity ?? s.severity;
+    const { error } = await db.from('agent_reports').insert({
+      agent_id: 'CHOKEPOINT_WATCHER',
+      severity: finalSeverity,
+      title: r.title,
+      summary: r.summary,
+      detail: r.detail,
+      data_points: r.data_points ?? [],
+      annotations: [r.ai_comment].filter(Boolean),
+      related_mmsi: [],
+      location: { lat: s.cp.centerLat, lng: s.cp.centerLng, zoom: 6, chokepoint_id: s.cp.id },
+      raw_data: { cp_id: s.cp.id, cp_name: s.cp.name, ships: s.ships, baseline: s.baseline, change_pct: s.changePct },
+    });
+    if (error) {
+      console.error(`[CHOKEPOINT_WATCHER] ${s.cp.id} insert error:`, error.message);
+    } else {
+      console.log(`[CHOKEPOINT_WATCHER] ${s.cp.id} report saved:`, finalSeverity);
+      _dedupCache[s.cp.id] = { severity: finalSeverity, ts: Date.now() };
+    }
   }
 }
 

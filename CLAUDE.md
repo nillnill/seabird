@@ -14,7 +14,7 @@
 | 상태관리 | Zustand 5 |
 | 차트 | Recharts 3 (통계 대시보드) |
 | 지도 | Mapbox GL JS v3 (dark-v11 스타일) |
-| AI | Claude API (서버에서 호출 — Haiku/Sonnet/Opus 티어화) |
+| AI | Claude API (서버에서 호출 — Haiku/Sonnet 티어화) |
 | DB / Realtime | Supabase (PostgreSQL + Realtime) |
 | 백엔드 | Node.js + Express + ws (포트 3001) |
 | AIS 데이터 | aisstream.io WebSocket (전 세계 BoundingBox) |
@@ -55,7 +55,7 @@ seabird/
 │   │   ├── portAnalyst.js     ← 10분 폴링, Haiku, 30개 항만 combined
 │   │   ├── chokepointWatcher.js ← 5분 폴링, Haiku, 7개 초크포인트 combined
 │   │   ├── geopoliticalLinker.js ← 15분 폴링, Sonnet, Perplexity 영문검색 → 한국어 번역
-│   │   ├── masterAgent.js     ← 10분 폴링, Opus, 전체 종합 보고
+│   │   ├── masterAgent.js     ← 10분 폴링, Sonnet, 전체 종합 보고
 │   │   ├── weatherAgent.js    ← 30분 폴링, Haiku, Open-Meteo 13개 해역 날씨 → 이모지 마커
 │   │   └── commodityAnalyst.js ← 60분 폴링, Haiku, Perplexity 원자재·운임 가격
 │   └── data/
@@ -115,7 +115,7 @@ Node.js 서버 (server/index.js)
     ├─ agents/portAnalyst.js      (10분, Haiku)  ─┐
     ├─ agents/chokepointWatcher.js (5분, Haiku)   ├─ Supabase INSERT
     ├─ agents/geopoliticalLinker.js(15분, Sonnet)  │   agent_reports
-    ├─ agents/masterAgent.js       (10분, Opus)    │
+    ├─ agents/masterAgent.js       (10분, Sonnet)  │
     ├─ agents/weatherAgent.js      (30분, Haiku)   │  ← Open-Meteo 13개 해역
     └─ agents/commodityAnalyst.js  (60분, Haiku) ──┘  ← Perplexity 원자재·운임
                                                     ↓ Realtime
@@ -162,9 +162,9 @@ Node.js 서버 (포트 3001)
 | 에이전트 | 파일 | 모델 | 트리거 | 동작 |
 |----------|------|------|--------|------|
 | PORT ANALYST | `server/agents/portAnalyst.js` | claude-haiku-4-5 | 10분 폴링 | 30개 항만 combined, 항상 보고 |
-| CHOKEPOINT WATCHER | `server/agents/chokepointWatcher.js` | claude-haiku-4-5 | 5분 폴링 | 7개 초크포인트 combined, 항상 보고 |
+| CHOKEPOINT WATCHER | `server/agents/chokepointWatcher.js` | claude-haiku-4-5 | 5분 폴링 | 7개 초크포인트를 **단일 호출**로 묶어 분석(reports 배열) → 초크포인트별 보고 행 저장. dedup 통과분만 분석, 전부 dedup 시 호출 0회 |
 | GEOPOLITICAL LINKER | `server/agents/geopoliticalLinker.js` | claude-sonnet-4-6 | 15분 폴링 | Perplexity 영문검색 → Claude 한국어 번역 |
-| MASTER AGENT | `server/agents/masterAgent.js` | claude-opus-4-8 | 10분 폴링 | 전체 종합, 긴급 시 에이전트 재실행 |
+| MASTER AGENT | `server/agents/masterAgent.js` | claude-sonnet-4-6 | 10분 폴링 | 전체 종합, 긴급 시 에이전트 재실행 |
 | WEATHER AGENT | `server/agents/weatherAgent.js` | claude-haiku-4-5 | 30분 폴링 | Open-Meteo로 13개 해역 날씨 수집 → 이모지·심각도 마커 + 악천후 보고. 항상 보고 |
 | COMMODITY ANALYST | `server/agents/commodityAnalyst.js` | claude-haiku-4-5 | 60분 폴링 | Perplexity로 원자재·운임 가격 검색 → 구조화 data_points + 한국어 시황 |
 | CARGO ESTIMATOR | `src/agents/cargoEstimator.js` | claude-sonnet-4-6 | 선박 클릭 | 선박 종류별 전용 프롬프트, vessel_type 변경 시 자동 재실행 |
