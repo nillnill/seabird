@@ -150,15 +150,20 @@ SHIP TRACK (선박 클릭 → 항적 탭)
 
 ```
 aisstream.io WebSocket (전 세계 BoundingBox: [[-90,-180],[90,180]])
+    구독 MessageTypes: PositionReport(1/2/3) + ShipStaticData(5)
+                     + ExtendedClassBPositionReport(19) + StaticDataReport(24)  ← Class B 소형선 선종 확보
     ↓ (단일 연결, server/index.js)
 Node.js 서버 (포트 3001)
     ├─ WebSocket relay → 브라우저 (ws://localhost:3001/relay)
-    ├─ 30초 배치 → Supabase ships 테이블 upsert
+    ├─ shipState(누적 캐시) → 30초 배치 → Supabase ships 테이블 upsert
     │   수집 필드: mmsi, lat, lng, speed, heading, course, nav_status,
     │             ship_name, vessel_type, destination, eta, draught,
     │             call_sign, imo, flag_country
     └─ 10초마다 → ship_positions INSERT
 ```
+
+> **shipState 누적 캐시 (중요)**: 과거엔 30초 버퍼를 통째로 비우고 이질적 행을 한 배치로 upsert해, 위치-only 갱신이 PostgREST 컬럼 합집합 규칙으로 `vessel_type`/`ship_name`을 NULL로 덮어써 정적 데이터가 수일간 ~3%에 정체됐다. 지금은 mmsi별 **누적 상태를 메모리에 유지**하고, 변경분만 **모든 컬럼을 정규화(동일 키)** 해 upsert하므로 한 번 받은 선종·선명이 보존된다. `shipState`는 6시간 미수신 시 evict.
+> **flag는 MMSI MID로 결정** (`MID_TO_FLAG` 표준 테이블). 모든 PositionReport에 채우고, `/api/port-stats`는 저장값이 없으면 mmsi에서 즉시 계산 → 기존 행도 커버. (vessel_type은 정적 메시지에만 있어 누적이 필요.)
 
 ---
 

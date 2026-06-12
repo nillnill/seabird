@@ -45,8 +45,28 @@ function broadcast(data) {
 }
 
 // ── AIS 데이터 배치 버퍼 ──────────────────────────────────────────────────────
-const shipUpsertBuf = new Map(); // mmsi → ship object
-const positionInsertBuf = [];    // { mmsi, lat, lng, speed, recorded_at }[]
+// shipState: mmsi → 누적 전체 레코드(위치+정적 통합). 절대 통째로 비우지 않고 유지한다.
+// 과거엔 30초마다 버퍼를 비워 정적 데이터(vessel_type/ship_name)가 위치 갱신에 덮여 사라졌음
+// → 누적 캐시 + 정규화 컬럼(모든 행 동일 키)으로 PostgREST upsert가 다른 컬럼을 NULL로 지우는 문제 제거.
+const shipState = new Map();      // mmsi → { ...모든 컬럼 }
+const dirtyMmsi = new Set();      // 마지막 flush 이후 변경된 mmsi
+const positionInsertBuf = [];     // { mmsi, lat, lng, speed, recorded_at }[]
+
+// upsert 시 모든 행이 동일 컬럼 집합을 갖도록 정규화 (이질 배치의 NULL 덮어쓰기 방지)
+const SHIP_COLS = ['mmsi','lat','lng','speed','heading','course','nav_status','ship_name',
+  'vessel_type','destination','draught','call_sign','imo','eta','flag_country','origin_country','updated_at'];
+
+// 수신 필드를 누적 상태에 병합. Type=0('Other')은 이미 아는 선종을 덮어쓰지 않음.
+function applyShipUpdate(mmsi, fields) {
+  const cur = shipState.get(mmsi) ?? { mmsi };
+  if (fields.vessel_type === 'Other' && cur.vessel_type && cur.vessel_type !== 'Other') {
+    const { vessel_type, ...rest } = fields;
+    fields = rest;
+  }
+  Object.assign(cur, fields);
+  shipState.set(mmsi, cur);
+  dirtyMmsi.add(mmsi);
+}
 
 function mapAISTypeToCategory(typeCode) {
   if (!typeCode) return 'Other';
@@ -62,26 +82,63 @@ function mapAISTypeToCategory(typeCode) {
   return 'Other';
 }
 
+// ITU MID(MMSI 앞 3자리) → ISO3 국가코드. 전 세계 표준 테이블(주요 해운·기국 포괄).
+const MID_TO_FLAG = {
+  201:'ALB',202:'AND',203:'AUT',204:'PRT',205:'BEL',206:'BLR',207:'BGR',208:'VAT',209:'CYP',210:'CYP',
+  211:'DEU',212:'CYP',213:'GEO',214:'MDA',215:'MLT',216:'ARM',218:'DEU',219:'DNK',220:'DNK',224:'ESP',
+  225:'ESP',226:'FRA',227:'FRA',228:'FRA',230:'FIN',231:'FRO',232:'GBR',233:'GBR',234:'GBR',235:'GBR',
+  236:'GIB',237:'GRC',238:'HRV',239:'GRC',240:'GRC',241:'GRC',242:'MAR',243:'HUN',244:'NLD',245:'NLD',
+  246:'NLD',247:'ITA',248:'MLT',249:'MLT',250:'IRL',251:'ISL',252:'LIE',253:'LUX',254:'MCO',255:'PRT',
+  256:'MLT',257:'NOR',258:'NOR',259:'NOR',261:'POL',262:'MNE',263:'PRT',264:'ROU',265:'SWE',266:'SWE',
+  267:'SVK',268:'SMR',269:'CHE',270:'CZE',271:'TUR',272:'UKR',273:'RUS',274:'MKD',275:'LVA',276:'EST',
+  277:'LTU',278:'SVN',279:'SRB',
+  301:'AIA',303:'USA',304:'ATG',305:'ATG',306:'CUW',307:'ABW',308:'BHS',309:'BHS',310:'BMU',311:'BHS',
+  312:'BLZ',314:'BRB',316:'CAN',319:'CYM',321:'CRI',323:'CUB',325:'DMA',327:'DOM',329:'GLP',330:'GRD',
+  331:'GRL',332:'GTM',334:'HND',336:'HTI',338:'USA',339:'JAM',341:'KNA',343:'LCA',345:'MEX',347:'MTQ',
+  348:'MSR',350:'NIC',351:'PAN',352:'PAN',353:'PAN',354:'PAN',355:'PAN',356:'PAN',357:'PAN',358:'PRI',
+  359:'SLV',361:'SPM',362:'TTO',364:'TCA',366:'USA',367:'USA',368:'USA',369:'USA',370:'PAN',371:'PAN',
+  372:'PAN',373:'PAN',374:'PAN',375:'VCT',376:'VCT',377:'VCT',378:'VGB',379:'VIR',
+  401:'AFG',403:'SAU',405:'BGD',408:'BHR',410:'BTN',412:'CHN',413:'CHN',414:'CHN',416:'TWN',417:'LKA',
+  419:'IND',422:'IRN',423:'AZE',425:'IRQ',428:'ISR',431:'JPN',432:'JPN',434:'TKM',436:'KAZ',437:'UZB',
+  438:'JOR',440:'KOR',441:'KOR',443:'PSE',445:'PRK',447:'KWT',450:'LBN',451:'KGZ',453:'MAC',455:'MDV',
+  457:'MNG',459:'NPL',461:'OMN',463:'PAK',466:'QAT',468:'SYR',470:'ARE',471:'ARE',472:'TJK',473:'YEM',
+  475:'YEM',477:'HKG',478:'BIH',
+  501:'FRA',503:'AUS',506:'MMR',508:'BRN',510:'FSM',511:'PLW',512:'NZL',514:'KHM',515:'KHM',516:'CXR',
+  518:'COK',520:'FJI',523:'CCK',525:'IDN',529:'KIR',531:'LAO',533:'MYS',536:'MNP',538:'MHL',540:'NCL',
+  542:'NIU',544:'NRU',546:'PYF',548:'PHL',553:'PNG',555:'PCN',557:'SLB',559:'ASM',561:'WSM',563:'SGP',
+  564:'SGP',565:'SGP',566:'SGP',567:'THA',570:'TON',572:'TUV',574:'VNM',576:'VUT',577:'VUT',578:'WLF',
+  601:'ZAF',603:'AGO',605:'DZA',607:'ATF',608:'SHN',609:'BDI',610:'CMR',611:'COD',612:'CAF',613:'COG',
+  615:'COG',616:'COM',617:'CPV',618:'ATF',619:'CIV',620:'COM',621:'DJI',622:'EGY',624:'ETH',625:'ERI',
+  626:'GAB',627:'GHA',629:'GMB',630:'GNB',631:'GNQ',632:'GIN',633:'BFA',634:'KEN',635:'ATF',636:'LBR',
+  637:'LBR',638:'SSD',642:'LBY',644:'LSO',645:'MUS',647:'MDG',649:'MLI',650:'MOZ',654:'MRT',655:'MWI',
+  656:'NER',657:'NGA',659:'NAM',660:'REU',661:'RWA',662:'SDN',663:'SEN',664:'SYC',665:'SHN',666:'SOM',
+  667:'SLE',668:'STP',669:'SWZ',670:'TCD',671:'TGO',672:'TUN',674:'TZA',675:'UGA',676:'COD',677:'TZA',
+  678:'ZMB',679:'ZWE',
+  701:'ARG',710:'BRA',720:'BOL',725:'CHL',730:'COL',735:'ECU',740:'FLK',745:'GUF',750:'GUY',755:'PRY',
+  760:'PER',765:'SUR',770:'URY',775:'VEN',
+};
 function mmsiToFlag(mmsi) {
-  const mid = parseInt(mmsi.substring(0, 3));
-  const m = { 338:'USA',440:'KOR',441:'KOR',412:'CHN',413:'CHN',431:'JPN',432:'JPN',
-              525:'IDN',563:'SGP',503:'AUS',636:'LBR',235:'GBR',211:'DEU',247:'ITA',
-              244:'NLD',226:'FRA',224:'ESP',273:'RUS',419:'IND',470:'ARE' };
-  return m[mid] ?? null;
+  if (!mmsi) return null;
+  return MID_TO_FLAG[parseInt(String(mmsi).substring(0, 3))] ?? null;
 }
 
 function parsePositionReport(msg) {
   const m = msg.Message.PositionReport;
   const rawHeading = m.TrueHeading !== 511 ? m.TrueHeading : (m.Cog ?? null);
   const navStatus = (m.NavigationStatus != null && m.NavigationStatus !== 15) ? m.NavigationStatus : null;
+  const mmsi = String(m.UserID);
+  const flag = mmsiToFlag(mmsi);
   return {
-    mmsi: String(m.UserID),
+    mmsi,
     lat: m.Latitude,
     lng: m.Longitude,
     speed: m.Sog ?? null,
     heading: rawHeading != null ? Math.round(rawHeading) : null,
     course: m.Cog != null ? Math.round(m.Cog) : null,
     nav_status: navStatus,
+    // 국적은 MMSI MID로 모든 메시지에서 결정 가능 → PositionReport에도 채워 커버리지 ~100%
+    flag_country: flag,
+    origin_country: flag,
     updated_at: new Date().toISOString(),
   };
 }
@@ -116,14 +173,64 @@ function parseShipStaticData(msg) {
     eta: parseEta(m.Eta),
     flag_country: mmsiToFlag(mmsi),
     origin_country: mmsiToFlag(mmsi),
+    updated_at: new Date().toISOString(),
   };
+}
+
+// Class B 확장 위치 보고(Type 19) — 위치 + 선종(Type) 동시 제공
+function parseExtendedClassBPosition(msg) {
+  const m = msg.Message?.ExtendedClassBPositionReport;
+  if (!m || m.Latitude == null || m.Longitude == null) return null;
+  const mmsi = String(m.UserID);
+  const flag = mmsiToFlag(mmsi);
+  const rawHeading = (m.TrueHeading != null && m.TrueHeading >= 0 && m.TrueHeading <= 359) ? m.TrueHeading : (m.Cog ?? null);
+  const type = mapAISTypeToCategory(m.Type ?? 0);
+  const out = {
+    mmsi,
+    lat: m.Latitude,
+    lng: m.Longitude,
+    speed: m.Sog ?? null,
+    heading: rawHeading != null ? Math.round(rawHeading) : null,
+    course: m.Cog != null ? Math.round(m.Cog) : null,
+    flag_country: flag,
+    origin_country: flag,
+    updated_at: new Date().toISOString(),
+  };
+  if (m.Name?.trim()) out.ship_name = m.Name.trim().slice(0, 100);
+  if (type !== 'Other') out.vessel_type = type; // Other는 넣지 않아 기존 선종 보존
+  return out;
+}
+
+// Class B 정적 보고(Type 24) — Part A(이름) / Part B(선종·호출부호)
+function parseStaticDataReport(msg) {
+  const m = msg.Message?.StaticDataReport;
+  if (!m || m.UserID == null) return null;
+  const mmsi = String(m.UserID);
+  const flag = mmsiToFlag(mmsi);
+  const out = { mmsi, flag_country: flag, origin_country: flag, updated_at: new Date().toISOString() };
+  const name = m.ReportA?.Name?.trim();
+  if (name) out.ship_name = name.slice(0, 100);
+  if (m.ReportB?.ShipType != null) {
+    const type = mapAISTypeToCategory(m.ReportB.ShipType);
+    if (type !== 'Other') out.vessel_type = type;
+  }
+  const cs = m.ReportB?.CallSign?.trim();
+  if (cs) out.call_sign = cs.slice(0, 8);
+  return out;
 }
 
 // ── Supabase 배치 upsert (30초) ───────────────────────────────────────────────
 setInterval(async () => {
-  if (shipUpsertBuf.size === 0) return;
-  const rows = Array.from(shipUpsertBuf.values()).filter(r => r.lat != null && r.lng != null);
-  shipUpsertBuf.clear();
+  if (dirtyMmsi.size === 0) return;
+  // 변경된 mmsi의 누적 전체 상태를 정규화(모든 컬럼 동일)해서 upsert → 정적 데이터 보존
+  const rows = [];
+  for (const mmsi of dirtyMmsi) {
+    const r = shipState.get(mmsi);
+    if (r && r.lat != null && r.lng != null) {
+      rows.push(Object.fromEntries(SHIP_COLS.map(c => [c, r[c] ?? null])));
+    }
+  }
+  dirtyMmsi.clear();
   if (rows.length === 0) return;
 
   const { error } = await supabase
@@ -132,6 +239,17 @@ setInterval(async () => {
   if (error) console.error('[SUPABASE] ships upsert error:', error.message);
   else console.log(`[SUPABASE] upserted ${rows.length} ships`);
 }, SUPABASE_BATCH_INTERVAL_MS);
+
+// ── shipState 메모리 정리 (10분 주기, 6시간 미수신 mmsi 제거) ─────────────────
+setInterval(() => {
+  const cutoff = Date.now() - 6 * 3600000;
+  let removed = 0;
+  for (const [mmsi, r] of shipState) {
+    const t = r.updated_at ? Date.parse(r.updated_at) : 0;
+    if (t < cutoff) { shipState.delete(mmsi); dirtyMmsi.delete(mmsi); removed++; }
+  }
+  if (removed) console.log(`[SHIP_STATE] evicted ${removed} stale (state size=${shipState.size})`);
+}, 10 * 60 * 1000);
 
 // ── ship_positions 배치 INSERT (10초) ────────────────────────────────────────
 setInterval(async () => {
@@ -169,7 +287,8 @@ function connectAIS() {
     lastAisMessageAt = Date.now();
     aisWs.send(JSON.stringify({
       APIKey: process.env.AISSTREAM_API_KEY,
-      MessageTypes: ['PositionReport', 'ShipStaticData'],
+      // Class A 위치(1/2/3)·정적(5)에 더해 Class B 확장위치(19)·정적(24)도 구독 → 소형선 선종 확보
+      MessageTypes: ['PositionReport', 'ShipStaticData', 'ExtendedClassBPositionReport', 'StaticDataReport'],
       BoundingBoxes: [[[-90, -180], [90, 180]]],
     }));
   });
@@ -183,27 +302,26 @@ function connectAIS() {
     try {
       const msg = JSON.parse(raw);
 
-      if (msg.MessageType === 'PositionReport') {
-        const parsed = parsePositionReport(msg);
-        // ships 버퍼에 추가 (최신 위치로 덮어씀)
-        const existing = shipUpsertBuf.get(parsed.mmsi) ?? {};
-        shipUpsertBuf.set(parsed.mmsi, { ...existing, ...parsed });
-        // positions 이력에 추가
-        positionInsertBuf.push({
-          mmsi: parsed.mmsi,
-          lat: parsed.lat,
-          lng: parsed.lng,
-          speed: parsed.speed,
-          recorded_at: parsed.updated_at,
-        });
+      if (msg.MessageType === 'PositionReport' || msg.MessageType === 'ExtendedClassBPositionReport') {
+        const parsed = msg.MessageType === 'PositionReport'
+          ? parsePositionReport(msg)
+          : parseExtendedClassBPosition(msg);
+        if (parsed) {
+          applyShipUpdate(parsed.mmsi, parsed);
+          positionInsertBuf.push({
+            mmsi: parsed.mmsi,
+            lat: parsed.lat,
+            lng: parsed.lng,
+            speed: parsed.speed,
+            recorded_at: parsed.updated_at,
+          });
+        }
       } else if (msg.MessageType === 'ShipStaticData') {
         const parsed = parseShipStaticData(msg);
-        const existing = shipUpsertBuf.get(parsed.mmsi) ?? {};
-        // Type=0(미지정)이 들어올 때 기존에 알려진 선종을 덮어쓰지 않음
-        if (parsed.vessel_type === 'Other' && existing.vessel_type && existing.vessel_type !== 'Other') {
-          parsed.vessel_type = existing.vessel_type;
-        }
-        shipUpsertBuf.set(parsed.mmsi, { ...existing, ...parsed });
+        applyShipUpdate(parsed.mmsi, parsed);
+      } else if (msg.MessageType === 'StaticDataReport') {
+        const parsed = parseStaticDataReport(msg);
+        if (parsed) applyShipUpdate(parsed.mmsi, parsed);
       }
     } catch {
       // 파싱 실패 무시
@@ -240,7 +358,7 @@ setTimeout(() => startWeatherAgent(),      5500);
 setTimeout(() => startCommodityAnalyst(),  6000);
 
 // ── HTTP 엔드포인트 ───────────────────────────────────────────────────────────
-app.get('/health', (_, res) => res.json({ status: 'ok', ships_buffered: shipUpsertBuf.size }));
+app.get('/health', (_, res) => res.json({ status: 'ok', ships_tracked: shipState.size, dirty: dirtyMmsi.size }));
 
 // 선박 항적 — service_role로 조회(ship_positions는 anon RLS로 막혀 있어 서버 경유)
 app.get('/api/ship-track', async (req, res) => {
@@ -457,7 +575,7 @@ app.get('/api/port-stats', async (req, res) => {
     const cutoff = new Date(Date.now() - 3600000).toISOString();
 
     const { data: ships } = await supabase.from('ships')
-      .select('vessel_type, flag_country, speed, course, heading, lat, lng, draught')
+      .select('mmsi, vessel_type, flag_country, speed, course, heading, lat, lng, draught')
       .gte('lat', port.lat - deg).lte('lat', port.lat + deg)
       .gte('lng', port.lng - deg).lte('lng', port.lng + deg)
       .gte('updated_at', cutoff);
@@ -475,7 +593,9 @@ app.get('/api/port-stats', async (req, res) => {
     (ships ?? []).forEach(s => {
       const type = s.vessel_type || 'Other';
       vesselTypeDist[type] = (vesselTypeDist[type] || 0) + 1;
-      if (s.flag_country) flagDist[s.flag_country] = (flagDist[s.flag_country] || 0) + 1;
+      // 저장된 flag가 없으면 mmsi MID로 즉시 계산 (기존 행도 커버)
+      const flag = s.flag_country || mmsiToFlag(s.mmsi);
+      if (flag) flagDist[flag] = (flagDist[flag] || 0) + 1;
 
       const sp = s.speed ?? 0;
       if (sp < 0.5) { status.berthed++; speedHist.berth++; }
