@@ -45,7 +45,7 @@ seabird/
 │   └── generate_character_excel.cjs  ← 캐릭터 엑셀 재생성 스크립트
 │
 ├── server/
-│   ├── index.js               ← AIS 프록시 + relay + /api/news + /api/cargo-estimate + 에이전트 시작
+│   ├── index.js               ← AIS 프록시 + relay + /api/news + /api/cargo-estimate + /api/ship-track + 에이전트 시작
 │   ├── package.json
 │   ├── .env                   ← 서버 환경변수 (git 제외)
 │   ├── agents/
@@ -127,6 +127,10 @@ CARGO ESTIMATOR (선박 클릭)
 
 REGION INTEL (항만·초크포인트 클릭)
 브라우저 → GET /api/news?id={regionId} → Perplexity 영문 검색 → Claude 한국어 번역
+
+SHIP TRACK (선박 클릭 → 항적 탭)
+브라우저 → GET /api/ship-track?mmsi={mmsi} → 서버(service_role) → ship_positions 조회 → { positions: [...] }
+※ ship_positions는 anon RLS가 모든 행을 차단(정책이 정상인데도 0행)하므로, 반드시 서버(service_role) 경유로 읽는다. 브라우저에서 직접 supabase 조회 금지.
 ```
 
 **핵심**: 에이전트는 서버에서만 실행. 브라우저는 Supabase Realtime으로 수신.
@@ -260,7 +264,7 @@ xiamen, kaohsiung, laem_chabang, jakarta, colombo, savannah, hochiminhcity
 VITE_SUPABASE_URL=https://xxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJ...
 VITE_MAPBOX_TOKEN=pk.eyJ...
-VITE_PROXY_URL=http://localhost:3001
+VITE_PROXY_URL=http://localhost:3001   # 배포(Vercel): https://seabird.onrender.com
 # VITE_ANTHROPIC_API_KEY 불필요 — 에이전트가 서버에서 실행됨
 ```
 
@@ -334,6 +338,10 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 6. **ships 테이블 미생성 시 선박 미표시**: `supabase_schema.sql` 전체를 Supabase SQL Editor에서 실행해야 함. `agent_reports`만 있고 `ships`가 없으면 지도에 선박이 나타나지 않음.
 7. **호르무즈 등 일부 해역 선박 공백**: aisstream.io 무료 티어는 지상 수신기 기반이라 페르시아만·홍해 등 일부 해역의 커버리지가 제한됨. 제재 회피 AIS 소등 선박은 수신 불가.
 8. **PortMarker는 GL 레이어 방식**: HTML 마커(mapboxgl.Marker)가 아닌 GeoJSON circle+symbol 레이어로 구현. 줌/팬 시 지도와 정확히 동기화됨. 초크포인트는 여전히 HTML 마커.
+9. **ship_positions anon RLS 차단**: RLS 정책이 정상(PERMISSIVE SELECT public)인데도 anon 키로는 0행만 반환됨(원인 미상). 그래서 항적은 브라우저 직접 조회가 아니라 `GET /api/ship-track`(서버 service_role)로 읽는다.
+10. **HTML 마커 애니메이션 주의**: mapboxgl.Marker 엘리먼트의 `transform`은 Mapbox가 위치 고정에 사용하므로, CSS 애니메이션에서 `transform`(rotate/translate 등)을 마커 엘리먼트에 직접 걸면 줌/팬 시 위치 이탈. 애니메이션은 내부 자식 엘리먼트에 적용할 것(WeatherMarker의 `.weather-emoji` 패턴). `box-shadow`만 쓰는 초크포인트 마커는 무관.
+11. **AIS 유휴 워치독**: aisstream WebSocket이 half-open(좀비)되면 `close`가 안 떠 재연결이 안 됨 → 서버가 조용히 수신 중단. `index.js`가 60초 무수신 시 소켓을 강제 종료해 재연결한다.
+12. **Render 배포 시 Supabase 키**: `seabird-server`의 `SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_URL`(render.yaml에서 `sync:false`)을 Render 대시보드에 **로컬 `server/.env`와 동일하게** 설정해야 함. 키가 잘못되면 서버의 모든 Supabase 작업이 `{"error":"Invalid API key"}`로 실패(항적·DB 쓰기 전부 불가)하나, AIS relay와 프론트 anon 읽기는 동작해 증상이 가려짐.
 
 ---
 
@@ -350,6 +358,6 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 | 5++ | ShipDetailPanel Civ7 리디자인 + 선박·지역 캐릭터 45개 이미지 시스템 구축 | ✅ 완료 |
 | 5+++ | 통계 대시보드(Recharts 8섹션) + Cargo 캐시(12h) + localStorage 선박 캐시 | ✅ 완료 |
 | 5++++ | WEATHER AGENT(Open-Meteo 날씨 이모지 마커) + COMMODITY ANALYST(Perplexity 원자재·운임 시황) 추가 | ✅ 완료 |
-| 6 | Vercel/Render 배포 | 🔲 진행 중 |
+| 6 | Vercel/Render 배포 (프론트 seabird-tau.vercel.app, 서버 seabird.onrender.com) | ✅ 완료 |
 | 6+ | 비교 수치 시스템 | 🔲 |
 | 7 | 버그픽스 + 데모 시나리오 준비 | 🔲 |
