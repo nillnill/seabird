@@ -276,23 +276,21 @@ export default function ShipDetailPanel() {
   const [activeTab, setActiveTab] = useState('info');
   const [showVesselInfo, setShowVesselInfo] = useState(false);
 
+  // 선박 변경 시: 화물추정 상태 초기화(AI 호출은 '화물 추정' 탭 진입 시) + 항적 로드
   useEffect(() => {
     if (!selectedShip) {
       setCargoResult(null);
+      setCargoError(null);
+      setCargoLoading(false);
       setTrackData([]);
       clearShipTrack();
       return;
     }
     setCargoResult(null);
     setCargoError(null);
-    setCargoLoading(true);
+    setCargoLoading(false);
     setActiveTab('info');
     setShowVesselInfo(false);
-
-    runCargoEstimator(selectedShip.mmsi, selectedShip)
-      .then(r => setCargoResult(r))
-      .catch(e => setCargoError(e?.message ?? '추정 실패'))
-      .finally(() => setCargoLoading(false));
 
     fetch(`${PROXY_URL}/api/ship-track?mmsi=${encodeURIComponent(selectedShip.mmsi)}`)
       .then(r => r.json())
@@ -303,6 +301,18 @@ export default function ShipDetailPanel() {
       })
       .catch(() => { setTrackData([]); setShipTrack([]); });
   }, [selectedShip?.mmsi, selectedShip?.vessel_type]);
+
+  // 화물 추정 탭 진입 시에만 AI 호출 (동일 선박은 1회만, 결과 유지)
+  useEffect(() => {
+    if (!selectedShip || activeTab !== 'cargo') return;
+    if (cargoResult || cargoLoading) return;
+    setCargoLoading(true);
+    setCargoError(null);
+    runCargoEstimator(selectedShip.mmsi, selectedShip)
+      .then(r => setCargoResult(r))
+      .catch(e => setCargoError(e?.message ?? '추정 실패'))
+      .finally(() => setCargoLoading(false));
+  }, [activeTab, selectedShip?.mmsi, selectedShip?.vessel_type]);
 
   if (!selectedShip) return null;
 

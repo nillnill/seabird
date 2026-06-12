@@ -15,10 +15,10 @@ export default function App() {
         <div className="relative flex-1">
           <MapView />
           {selectedShip && <ShipDetailPanel />}
+          {selectedRegion && <RegionIntelPanel />}
         </div>
         <CommandFeed />
       </div>
-      {selectedRegion && <RegionIntelPanel />}
       <StatsDashboard />
     </div>
   );

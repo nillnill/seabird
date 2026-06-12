@@ -33,7 +33,7 @@ export default function MapView() {
   const markersRef = useRef(null);
   const portMarkersRef = useRef(null);
   const weatherMarkersRef = useRef(null);
-  const { setSelectedShip, selectedShip, mapCenter, mapZoom, mapFilters, shipTrack } = useStore();
+  const { setSelectedShip, selectedShip, selectedRegion, mapCenter, mapZoom, mapFilters, shipTrack } = useStore();
   const [activeStyle, setActiveStyle] = useState('dark');
 
   useAISStream(mapRef);
@@ -259,7 +259,7 @@ export default function MapView() {
         style={{ background: '#0A0E1A' }}
       />
       {/* 맵 스타일 토글 — 선박 선택 시 좌측 카드에 가리지 않게 오른쪽으로 이동 */}
-      <div className={`absolute top-3 flex gap-1 z-10 transition-all duration-300 ${selectedShip ? 'left-[27.5rem]' : 'left-3'}`}>
+      <div className={`absolute top-3 flex gap-1 z-10 transition-all duration-300 ${(selectedShip || selectedRegion) ? 'left-[27.5rem]' : 'left-3'}`}>
         {MAP_STYLES.map(s => (
           <button
             key={s.id}

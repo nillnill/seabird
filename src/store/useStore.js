@@ -5,7 +5,8 @@ const useStore = create((set) => ({
   selectedShip: null,
   mapCenter: [127.0, 35.0],
   mapZoom: 4,
-  setSelectedShip: (ship) => set({ selectedShip: ship }),
+  // 선박·지역 카드는 좌측에서 상호 배타 (하나 열면 다른 하나 닫힘)
+  setSelectedShip: (ship) => set(ship ? { selectedShip: ship, selectedRegion: null } : { selectedShip: null }),
   focusMap: (lat, lng, zoom = 8) => set({ mapCenter: [lng, lat], mapZoom: zoom }),
 
   // 지도 필터 (선종·국기·속도)
@@ -24,7 +25,7 @@ const useStore = create((set) => ({
 
   // 지역 인텔 패널 (항만 + 초크포인트 통합)
   selectedRegion: null,
-  setSelectedRegion: (region) => set({ selectedRegion: region }),
+  setSelectedRegion: (region) => set(region ? { selectedRegion: region, selectedShip: null } : { selectedRegion: null }),
 
   // 피드 상태
   reports: [],

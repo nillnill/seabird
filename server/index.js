@@ -141,9 +141,9 @@ setInterval(async () => {
   if (error) console.error('[SUPABASE] positions insert error:', error.message);
 }, POSITIONS_FLUSH_INTERVAL_MS);
 
-// ── TTL 정리 (1시간, 2시간 초과분 삭제) ───────────────────────────────────────
+// ── TTL 정리 (1시간 주기, 6시간 초과분 삭제) ──────────────────────────────────
 setInterval(async () => {
-  const cutoff = new Date(Date.now() - 2 * 3600000).toISOString();
+  const cutoff = new Date(Date.now() - 6 * 3600000).toISOString();
   const { error } = await supabase
     .from('ship_positions')
     .delete()
@@ -250,7 +250,7 @@ app.get('/api/ship-track', async (req, res) => {
     .select('lat, lng, recorded_at')
     .eq('mmsi', String(mmsi))
     .order('recorded_at', { ascending: false })
-    .limit(200);
+    .limit(1000);
   if (error) {
     console.error('[SHIP_TRACK] error:', error.message);
     return res.status(500).json({ error: error.message });

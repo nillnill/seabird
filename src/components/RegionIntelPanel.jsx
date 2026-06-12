@@ -102,15 +102,9 @@ export default function RegionIntelPanel() {
   const { character, stats, history } = data;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      {/* 백드롭 */}
-      <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
-        onClick={() => setSelectedRegion(null)}
-      />
-
-      {/* 패널 */}
-      <div className="relative w-full max-w-xl mx-4 max-h-[88vh] flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10">
+    <div className="absolute top-3 left-3 bottom-3 z-40 w-[26rem] max-w-[calc(100%-1.5rem)] flex flex-col pointer-events-none">
+      {/* 패널 — 선박 상세와 동일한 좌측 떠 있는 카드 */}
+      <div className="relative w-full h-full flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10 pointer-events-auto">
 
         {/* 캐릭터 헤더 */}
         <div
@@ -171,14 +165,13 @@ export default function RegionIntelPanel() {
               <p className="text-[11px] text-white/70 mt-1 leading-snug">
                 {character.title}
               </p>
+              {/* 명언 — 이미지 오른쪽 컬럼으로 이동 (선박 패널과 동일 구조) */}
+              <div className="mt-2 pl-3 border-l-2 border-white/20">
+                <p className="text-[11px] italic text-white/60 leading-relaxed">
+                  {character.quote}
+                </p>
+              </div>
             </div>
-          </div>
-
-          {/* 명언 */}
-          <div className="mt-3 pl-4 border-l-2 border-white/20">
-            <p className="text-[11px] italic text-white/60 leading-relaxed">
-              {character.quote}
-            </p>
           </div>
         </div>
 
