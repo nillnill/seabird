@@ -348,6 +348,8 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 10. **HTML 마커 애니메이션 주의**: mapboxgl.Marker 엘리먼트의 `transform`은 Mapbox가 위치 고정에 사용하므로, CSS 애니메이션에서 `transform`(rotate/translate 등)을 마커 엘리먼트에 직접 걸면 줌/팬 시 위치 이탈. 애니메이션은 내부 자식 엘리먼트에 적용할 것(WeatherMarker의 `.weather-emoji` 패턴). `box-shadow`만 쓰는 초크포인트 마커는 무관.
 11. **AIS 유휴 워치독**: aisstream WebSocket이 half-open(좀비)되면 `close`가 안 떠 재연결이 안 됨 → 서버가 조용히 수신 중단. `index.js`가 60초 무수신 시 소켓을 강제 종료해 재연결한다.
 12. **Render 배포 시 Supabase 키**: `seabird-server`의 `SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_URL`(render.yaml에서 `sync:false`)을 Render 대시보드에 **로컬 `server/.env`와 동일하게** 설정해야 함. 키가 잘못되면 서버의 모든 Supabase 작업이 `{"error":"Invalid API key"}`로 실패(항적·DB 쓰기 전부 불가)하나, AIS relay와 프론트 anon 읽기는 동작해 증상이 가려짐.
+13. **초크포인트 "통과 선박"은 통항량이 아니라 스냅샷**: `/api/chokepoint-stats`·`chokepointWatcher`의 카운트는 "해당 bbox 안에 최근 1h 내 위치가 잡힌 선박 수"(순간 스냅샷)이지, 1시간 동안 통과한 누적 통항량이 아니다. 그래서 bbox 크기·AIS 커버리지에 따라 절대값이 크게 다르다(말라카 큰 박스 = 수백, 호르무즈 무수신 ≈ 0).
+14. **평년(baseline) 산출 정책 — `resolveBaseline()`**: `chokepointWatcher.js`에 공유 헬퍼. `baselines`의 `daily_throughput` 이력에서 **0 스냅샷(수집 공백)을 제외**한 실측 표본이 **48개 이상 + 24h 이상 분포**할 때만 그 평균을 동적 평년으로 쓰고, 그 전엔 `HARDCODED_BASELINE`(수에즈 58·말라카 247 등)을 쓴다. 엔드포인트와 에이전트가 같은 헬퍼를 공유. (과거: 동적 `avg_90d`가 마이그레이션 이전 0들로 오염돼 평년이 0.1~7.1로 나오던 버그를 이 정책으로 차단. `baselinesWriter`의 `avg_90d` 컬럼은 이제 소비되지 않고 이력 기록용.)
 
 ---
 

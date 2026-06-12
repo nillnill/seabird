@@ -14,6 +14,40 @@ const HARDCODED_BASELINE = {
   dover: 312, korea_strait: 156, bab_el_mandeb: 67,
 };
 
+// 평년(baseline) 산출 정책: 충분한 실측 이력이 쌓이기 전엔 하드코딩 기준값을 쓰고,
+// 그 이후부터 동적 평년(박스 내 선박 수의 평균)으로 전환한다.
+// 30분 간격 스냅샷 기준 — 48표본 ≈ 24h. 0 스냅샷(데이터 미수집 구간)은 평균에서 제외.
+const MIN_BASELINE_SAMPLES = 48;
+const MIN_BASELINE_SPAN_MS = 24 * 3600000;
+
+async function resolveBaseline(db, cpId) {
+  const hardcoded = HARDCODED_BASELINE[cpId] ?? 50;
+  try {
+    const cutoff90 = new Date(Date.now() - 90 * 24 * 3600000).toISOString();
+    const { data: rows } = await db
+      .from('baselines')
+      .select('current_value, snapshot_at')
+      .eq('location_id', cpId)
+      .eq('metric', 'daily_throughput')
+      .gte('snapshot_at', cutoff90)
+      .order('snapshot_at', { ascending: true });
+
+    // 0 = 수집 공백(예: nav_status 마이그레이션 이전, AIS 단절)으로 보고 제외
+    const samples = (rows ?? [])
+      .map(r => ({ v: parseFloat(r.current_value), t: Date.parse(r.snapshot_at) }))
+      .filter(s => s.v > 0 && Number.isFinite(s.t));
+
+    if (samples.length < MIN_BASELINE_SAMPLES) return hardcoded;
+    const span = samples[samples.length - 1].t - samples[0].t;
+    if (span < MIN_BASELINE_SPAN_MS) return hardcoded;
+
+    const avg = samples.reduce((s, x) => s + x.v, 0) / samples.length;
+    return avg > 0 ? Math.round(avg * 10) / 10 : hardcoded;
+  } catch {
+    return hardcoded;
+  }
+}
+
 const CHOKEPOINTS = [
   { id: 'suez',          name: '수에즈 운하',    emoji: '🇪🇬', bbox: [[29.9, 31.8], [31.3, 33.1]],  centerLat: 30.6, centerLng: 32.5 },
   { id: 'malacca',       name: '말라카 해협',    emoji: '🇸🇬', bbox: [[1.0, 99.5],  [6.5, 104.5]], centerLat: 2.5,  centerLng: 103.5 },
@@ -79,16 +113,7 @@ async function collectStats(cp, db) {
   const typeDist = {};
   ships.forEach(s => { const t = s.vessel_type || 'Other'; typeDist[t] = (typeDist[t] || 0) + 1; });
 
-  const { data: baselineRow } = await db
-    .from('baselines')
-    .select('avg_90d')
-    .eq('location_id', cp.id)
-    .eq('metric', 'daily_throughput')
-    .order('snapshot_at', { ascending: false })
-    .limit(1)
-    .single();
-
-  const baseline = baselineRow?.avg_90d ?? HARDCODED_BASELINE[cp.id] ?? 50;
+  const baseline = await resolveBaseline(db, cp.id);
   const changePct = baseline > 0 ? Math.round(((ships.length - baseline) / baseline) * 100) : 0;
   const severity = ships.length <= baseline * 0.5 ? 'CRITICAL'
     : ships.length <= baseline * 0.75 ? 'WARNING'
@@ -187,4 +212,4 @@ function startChokepointWatcher() {
   return setInterval(runChokepointWatcher, POLL_INTERVAL_MS);
 }
 
-module.exports = { runChokepointWatcher, startChokepointWatcher, CHOKEPOINTS };
+module.exports = { runChokepointWatcher, startChokepointWatcher, CHOKEPOINTS, resolveBaseline };

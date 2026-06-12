@@ -6,7 +6,7 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
 const { startPortAnalyst, runPortAnalyst, PORTS, HARDCODED_BASELINE: PORT_BASELINE } = require('./agents/portAnalyst');
-const { startChokepointWatcher, runChokepointWatcher, CHOKEPOINTS } = require('./agents/chokepointWatcher');
+const { startChokepointWatcher, runChokepointWatcher, CHOKEPOINTS, resolveBaseline } = require('./agents/chokepointWatcher');
 const { startBaselinesWriter } = require('./agents/baselinesWriter');
 const { startGeopoliticalLinker, runGeopoliticalLinker } = require('./agents/geopoliticalLinker');
 const { startWeatherAgent } = require('./agents/weatherAgent');
@@ -503,18 +503,9 @@ app.get('/api/chokepoint-stats', async (req, res) => {
       .gte('updated_at', cutoff);
 
     const total = (ships ?? []).length;
-    const CP_HARDCODED_BASELINE = { suez: 58, malacca: 247, hormuz: 89, panama: 35, dover: 312, korea_strait: 156, bab_el_mandeb: 67 };
 
-    const { data: baselineRow } = await supabase.from('baselines')
-      .select('avg_90d')
-      .eq('location_id', cpId)
-      .eq('metric', 'daily_throughput')
-      .order('snapshot_at', { ascending: false })
-      .limit(1)
-      .single();
-
-    // avg_90d가 0/null이면 하드코딩 평년값으로 폴백 (?? 는 0을 통과시키므로 || 사용)
-    const baseline = (baselineRow?.avg_90d || CP_HARDCODED_BASELINE[cpId]) ?? 50;
+    // 평년: 충분한 실측 이력이 쌓이면 동적 평균, 그 전엔 하드코딩 기준값 (chokepointWatcher와 동일 정책)
+    const baseline = await resolveBaseline(supabase, cpId);
     const change_pct = baseline > 0 ? Math.round(((total - baseline) / baseline) * 100) : 0;
 
     const typeDist = {};
