@@ -513,7 +513,8 @@ app.get('/api/chokepoint-stats', async (req, res) => {
       .limit(1)
       .single();
 
-    const baseline = baselineRow?.avg_90d ?? CP_HARDCODED_BASELINE[cpId] ?? 50;
+    // avg_90d가 0/null이면 하드코딩 평년값으로 폴백 (?? 는 0을 통과시키므로 || 사용)
+    const baseline = (baselineRow?.avg_90d || CP_HARDCODED_BASELINE[cpId]) ?? 50;
     const change_pct = baseline > 0 ? Math.round(((total - baseline) / baseline) * 100) : 0;
 
     const typeDist = {};

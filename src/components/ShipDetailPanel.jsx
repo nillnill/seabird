@@ -349,12 +349,12 @@ export default function ShipDetailPanel() {
           {/* 캐릭터 이미지 + 정보 (인물명 → 명언 → 탑승 선박) */}
           <div className="flex items-start gap-4">
             {/* 캐릭터 이미지 */}
-            <div className="w-40 h-40 shrink-0 rounded-xl overflow-hidden border border-white/20 bg-black/30 flex items-center justify-center">
+            <div className="w-40 h-40 shrink-0 flex items-center justify-center">
               {character.image ? (
                 <img
                   src={character.image}
                   alt={character.nameEn}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-contain drop-shadow-[0_4px_12px_rgba(0,0,0,0.5)]"
                   onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }}
                 />
               ) : null}

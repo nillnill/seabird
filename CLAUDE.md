@@ -37,17 +37,17 @@ seabird/
 ├── .env.local                 ← 프론트엔드 환경변수 (git 제외)
 │
 ├── public/
-│   └── characters/            ← 캐릭터 이미지 에셋 (45개 JPG, 512px·품질85로 최적화 — 합계 ~1.6MB)
-│       ├── ship_container.jpg ~ ship_other.jpg  (선박 타입 8개)
-│       └── region_suez.jpg ~ region_hochiminhcity.jpg  (지역 37개)
+│   └── characters/            ← 캐릭터 이미지 에셋 (45개 WebP, 투명 배경·512px·품질85로 최적화 — 합계 ~0.9MB)
+│       ├── ship_container.webp ~ ship_other.webp  (선박 타입 8개)
+│       └── region_suez.webp ~ region_hochiminhcity.webp  (지역 37개)
 │
-│   ※ image-asset/  ← AI 생성 원본 PNG(1024px, 합계 ~99MB). git 제외. scripts/optimize_characters.py로 public/characters/*.jpg 생성
+│   ※ image-asset/  ← AI 생성 원본 PNG(1024px, 투명 배경 RGBA). git 제외. scripts/optimize_characters.py로 public/characters/*.webp 생성(알파 보존)
 │
 ├── scripts/
 │   └── generate_character_excel.cjs  ← 캐릭터 엑셀 재생성 스크립트
 │
 ├── server/
-│   ├── index.js               ← AIS 프록시 + relay + /api/news + /api/cargo-estimate + /api/ship-track + 에이전트 시작
+│   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작
 │   ├── package.json
 │   ├── .env                   ← 서버 환경변수 (git 제외)
 │   ├── agents/
@@ -127,8 +127,11 @@ CARGO ESTIMATOR (선박 클릭)
 브라우저 → POST /api/cargo-estimate → 서버 → Claude Sonnet → JSON 응답
 (선박 종류별 전용 프롬프트: 탱커/LNG/벌크/어선/여객/특수선/컨테이너)
 
-REGION INTEL (항만·초크포인트 클릭)
-브라우저 → GET /api/news?id={regionId} → Perplexity 영문 검색 → Claude 한국어 번역
+REGION INTEL (항만·초크포인트 클릭 → RegionIntelPanel)
+브라우저 → GET /api/port-stats?portId={id} 또는 /api/chokepoint-stats?cpId={id}
+        → 서버가 ships 테이블(최근 1h updated_at)을 BoundingBox 집계 → 실시간 현황 vs 평년 게이지
+브라우저 → (뉴스 탭) GET /api/region-news?id={id}&type={type} → Perplexity 영문 검색 → Claude 한국어 번역
+※ 실시간 현황이 전부 0이면 ships 테이블에 신선한 행이 없다는 뜻 — upsert 실패(아래 nav_status 이슈) 또는 AIS 커버리지 공백을 의심.
 
 SHIP TRACK (선박 클릭 → 항적 탭)
 브라우저 → GET /api/ship-track?mmsi={mmsi} → 서버(service_role) → ship_positions 조회 → { positions: [...] }
@@ -198,7 +201,7 @@ xiamen, kaohsiung, laem_chabang, jakarta, colombo, savannah, hochiminhcity
 
 각 지역은 `{ type, character, stats, history, newsQuery }` 구조.
 캐릭터는 **해당 국가 역사 인물**이어야 함 (타국 인물 사용 금지).
-`character.image` 필드: `/characters/region_{id}.jpg` — 파일 없으면 `flagEmoji`로 fallback.
+`character.image` 필드: `/characters/region_{id}.webp` (투명 배경) — 파일 없으면 `flagEmoji`로 fallback.
 
 ---
 
@@ -208,14 +211,14 @@ xiamen, kaohsiung, laem_chabang, jakarta, colombo, savannah, hochiminhcity
 
 | vessel_type | 캐릭터 (한국어) | 직함 | 이미지 |
 |-------------|---------------|------|--------|
-| Container Ship | 박서연 | 글로벌 컨테이너 선단 선장 | ship_container.jpg |
-| Tanker | 카림 알-라시드 | 원유 탱커 수석 엔지니어 | ship_tanker.jpg |
-| Bulk Carrier | 아마두 디알로 | 벌크선 화물장 | ship_bulk.jpg |
-| LNG Carrier | 소피아 베르그 | LNG 안전관제 책임자 | ship_lng.jpg |
-| Passenger | 아르준 메타 | 크루즈 선장 | ship_passenger.jpg |
-| Fishing | 마리아 산토스 | 원양어선 선장 | ship_fishing.jpg |
-| Special Craft | 후안 카레라 | 해양 구조·특수 작전 지휘관 | ship_special.jpg |
-| Other | 아이나 오베르그 | 미지 항로 항법사 | ship_other.jpg |
+| Container Ship | 박서연 | 글로벌 컨테이너 선단 선장 | ship_container.webp |
+| Tanker | 카림 알-라시드 | 원유 탱커 수석 엔지니어 | ship_tanker.webp |
+| Bulk Carrier | 아마두 디알로 | 벌크선 화물장 | ship_bulk.webp |
+| LNG Carrier | 소피아 베르그 | LNG 안전관제 책임자 | ship_lng.webp |
+| Passenger | 아르준 메타 | 크루즈 선장 | ship_passenger.webp |
+| Fishing | 마리아 산토스 | 원양어선 선장 | ship_fishing.webp |
+| Special Craft | 후안 카레라 | 해양 구조·특수 작전 지휘관 | ship_special.webp |
+| Other | 아이나 오베르그 | 미지 항로 항법사 | ship_other.webp |
 
 이미지 생성 프롬프트: `seabird_characters.xlsx` 참조. 생성 후 `public/characters/`에 배치.
 
@@ -323,10 +326,11 @@ draught, max_draught, dwt, destination,
 flag_country, imo, call_sign, origin_country, dest_country, updated_at
 ```
 
-> `nav_status` 컬럼은 초기 스키마에 없음 — 아래 마이그레이션 필요:
+> `nav_status` 컬럼은 초기 스키마에 없음 — 아래 마이그레이션 필요 (seabird Supabase에는 2026-06-13 적용 완료):
 > ```sql
 > ALTER TABLE ships ADD COLUMN IF NOT EXISTS nav_status SMALLINT;
 > ```
+> ⚠️ 이 컬럼이 없으면 서버 upsert 페이로드에 `nav_status`가 포함돼 **ships upsert 배치 전체가 매번 실패**한다(`Could not find the 'nav_status' column`). 그 결과 ships 테이블이 갱신되지 않아 지도(relay 경유)는 멀쩡해 보여도 `/api/port-stats`·`/api/chokepoint-stats`의 "실시간 현황 vs 평년"이 전부 0으로 나온다. 새 Supabase 프로젝트로 옮길 때 반드시 먼저 실행.
 
 ---
 

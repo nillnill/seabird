@@ -8,7 +8,7 @@ export const SHIP_CHARACTERS = {
     quote: '"컨테이너 하나하나가 세계를 연결하는 다리다."',
     bgFrom: '#0A1628',
     bgTo: '#1A3A5C',
-    image: '/characters/ship_container.jpg',
+    image: '/characters/ship_container.webp',
   },
   'Tanker': {
     name: '카림 알-라시드',
@@ -19,7 +19,7 @@ export const SHIP_CHARACTERS = {
     quote: '"바다 아래 흐르는 검은 피가 문명을 움직인다."',
     bgFrom: '#1A0A00',
     bgTo: '#3D1F00',
-    image: '/characters/ship_tanker.jpg',
+    image: '/characters/ship_tanker.webp',
   },
   'Bulk Carrier': {
     name: '아마두 디알로',
@@ -30,7 +30,7 @@ export const SHIP_CHARACTERS = {
     quote: '"철광석 한 톤이 도시 하나를 세운다."',
     bgFrom: '#1A1000',
     bgTo: '#3D2B00',
-    image: '/characters/ship_bulk.jpg',
+    image: '/characters/ship_bulk.webp',
   },
   'LNG Carrier': {
     name: '소피아 베르그',
@@ -41,7 +41,7 @@ export const SHIP_CHARACTERS = {
     quote: '"극저온의 에너지를 안전하게 전달하는 것이 내 사명이다."',
     bgFrom: '#001A2E',
     bgTo: '#003D5C',
-    image: '/characters/ship_lng.jpg',
+    image: '/characters/ship_lng.webp',
   },
   'Passenger': {
     name: '아르준 메타',
@@ -52,7 +52,7 @@ export const SHIP_CHARACTERS = {
     quote: '"바다 위 이 배는 떠다니는 작은 세계다."',
     bgFrom: '#0A0020',
     bgTo: '#1A004A',
-    image: '/characters/ship_passenger.jpg',
+    image: '/characters/ship_passenger.webp',
   },
   'Fishing': {
     name: '마리아 산토스',
@@ -63,7 +63,7 @@ export const SHIP_CHARACTERS = {
     quote: '"파도가 높을수록 어장은 풍성하다."',
     bgFrom: '#001A1A',
     bgTo: '#003D3D',
-    image: '/characters/ship_fishing.jpg',
+    image: '/characters/ship_fishing.webp',
   },
   'Special Craft': {
     name: '후안 카레라',
@@ -74,7 +74,7 @@ export const SHIP_CHARACTERS = {
     quote: '"불가능한 임무란 없다, 준비가 부족했을 뿐이다."',
     bgFrom: '#001A00',
     bgTo: '#003D1A',
-    image: '/characters/ship_special.jpg',
+    image: '/characters/ship_special.webp',
   },
   'Other': {
     name: '아이나 오베르그',
@@ -85,6 +85,6 @@ export const SHIP_CHARACTERS = {
     quote: '"지도에 없는 길이야말로 진정한 탐험의 시작이다."',
     bgFrom: '#0A0A1A',
     bgTo: '#1A1A3A',
-    image: '/characters/ship_other.jpg',
+    image: '/characters/ship_other.webp',
   },
 };
