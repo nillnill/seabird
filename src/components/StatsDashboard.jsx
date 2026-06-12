@@ -5,6 +5,14 @@ import {
 } from 'recharts';
 import useStore from '../store/useStore.js';
 import { supabase } from '../utils/supabaseClient.js';
+import { normalizeDestination } from '../utils/destinationNormalizer.js';
+
+// destination 자유텍스트 → 정규화 표시 라벨 (없으면 null → 집계 제외)
+function destLabel(raw) {
+  const r = normalizeDestination(raw);
+  if (r.category === 'other' || r.category === 'none') return null;
+  return r.port || (r.countryKo ? `${r.countryKo} (기타항)` : null);
+}
 
 // 선종 색상 (MapFilter와 동일)
 const VESSEL_COLORS = {
@@ -235,14 +243,13 @@ export default function StatsDashboard() {
     return hours;
   }, [reports]);
 
-  // 목적지 Top 15
+  // 목적지 Top 15 (정규화 라벨로 파편화 통합)
   const destTop15 = useMemo(() => {
     const counts = {};
     ships.forEach(s => {
-      const dest = s.destination?.trim();
-      if (!dest || dest.length < 2 || /^\d+$/.test(dest)) return;
-      const key = dest.toUpperCase();
-      counts[key] = (counts[key] ?? 0) + 1;
+      const label = destLabel(s.destination);
+      if (!label) return;
+      counts[label] = (counts[label] ?? 0) + 1;
     });
     return Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
@@ -250,12 +257,26 @@ export default function StatsDashboard() {
       .map(([dest, count]) => ({ dest, count }));
   }, [ships]);
 
-  // 선택 목적지의 선종 분포
+  // 목적지 국가 Top 10
+  const destCountryTop = useMemo(() => {
+    const counts = {};
+    ships.forEach(s => {
+      const r = normalizeDestination(s.destination);
+      if (!r.countryKo) return;
+      counts[r.countryKo] = (counts[r.countryKo] ?? 0) + 1;
+    });
+    return Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([name, count]) => ({ name, count }));
+  }, [ships]);
+
+  // 선택 목적지의 선종 분포 (정규화 라벨 일치 기준)
   const destVesselDist = useMemo(() => {
     if (!selectedDest) return [];
     const counts = {};
     ships.forEach(s => {
-      if (s.destination?.trim().toUpperCase() !== selectedDest) return;
+      if (destLabel(s.destination) !== selectedDest) return;
       const t = s.vessel_type ?? 'Other';
       counts[t] = (counts[t] ?? 0) + 1;
     });
@@ -573,6 +594,21 @@ export default function StatsDashboard() {
             </div>
           )}
         </SectionCard>
+
+        {/* 목적지 국가 Top 10 (destination 정규화) */}
+        {destCountryTop.length > 0 && (
+          <SectionCard title="목적지 국가 Top 10">
+            <p className="text-[10px] font-mono text-sea-muted mb-2">AIS destination 자유텍스트를 정규화해 집계 (LOCODE·항구명 → 국가)</p>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={destCountryTop} layout="vertical" margin={{ left: 8, right: 40, top: 0, bottom: 0 }}>
+                <XAxis type="number" tick={{ fill: '#64748B', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: 10 }} width={90} axisLine={false} tickLine={false} />
+                <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.06)' }} />
+                <Bar dataKey="count" name="선박 수" fill="#10B981" radius={[0, 3, 3, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </SectionCard>
+        )}
 
         <div className="h-4" />
       </div>

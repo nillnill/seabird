@@ -8,6 +8,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { startPortAnalyst, runPortAnalyst, PORTS, HARDCODED_BASELINE: PORT_BASELINE } = require('./agents/portAnalyst');
 const { startChokepointWatcher, runChokepointWatcher, CHOKEPOINTS, HARDCODED_BASELINE: CP_BASELINE } = require('./agents/chokepointWatcher');
 const { resolveBaseline } = require('./agents/baselineUtils');
+const { normalizeDestination } = require('./data/destinationNormalizer');
 const { startBaselinesWriter } = require('./agents/baselinesWriter');
 const { startGeopoliticalLinker, runGeopoliticalLinker } = require('./agents/geopoliticalLinker');
 const { startWeatherAgent } = require('./agents/weatherAgent');
@@ -575,7 +576,7 @@ app.get('/api/port-stats', async (req, res) => {
     const cutoff = new Date(Date.now() - 3600000).toISOString();
 
     const { data: ships } = await supabase.from('ships')
-      .select('mmsi, vessel_type, flag_country, speed, course, heading, lat, lng, draught')
+      .select('mmsi, vessel_type, flag_country, speed, course, heading, lat, lng, draught, destination')
       .gte('lat', port.lat - deg).lte('lat', port.lat + deg)
       .gte('lng', port.lng - deg).lte('lng', port.lng + deg)
       .gte('updated_at', cutoff);
@@ -588,6 +589,9 @@ app.get('/api/port-stats', async (req, res) => {
     const traffic = { inbound: 0, outbound: 0, passing: 0, moving: 0 };
     // 속력 히스토그램
     const speedHist = { berth: 0, slow: 0, cruise: 0, fast: 0 };
+    // 목적지 국가 분포 (destination 자유텍스트 정규화)
+    const destCountryDist = {};
+    let destWithData = 0;
     let draughtSum = 0, draughtN = 0;
 
     (ships ?? []).forEach(s => {
@@ -617,6 +621,11 @@ app.get('/api/port-stats', async (req, res) => {
       }
 
       if (s.draught != null && s.draught > 0) { draughtSum += s.draught; draughtN++; }
+
+      if (s.destination) {
+        const nd = normalizeDestination(s.destination);
+        if (nd.countryKo) { destCountryDist[nd.countryKo] = (destCountryDist[nd.countryKo] || 0) + 1; destWithData++; }
+      }
     });
     const total = ships?.length ?? 0;
     const waitingCount = status.berthed + status.waiting;
@@ -655,6 +664,11 @@ app.get('/api/port-stats', async (req, res) => {
       ],
       avg_draught: draughtN ? Math.round((draughtSum / draughtN) * 10) / 10 : null,
       draught_samples: draughtN,
+      dest_country_dist: Object.entries(destCountryDist)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 8)
+        .map(([country, count]) => ({ country, count, pct: destWithData ? Math.round(count / destWithData * 100) : 0 })),
+      dest_samples: destWithData,
       vessel_type_dist: Object.entries(vesselTypeDist)
         .sort((a, b) => b[1] - a[1])
         .map(([type, count]) => ({ type, count, pct: total ? Math.round(count / total * 100) : 0 })),

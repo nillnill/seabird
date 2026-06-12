@@ -60,7 +60,8 @@ seabird/
 │   │   ├── weatherAgent.js    ← 30분 폴링, Haiku, Open-Meteo 13개 해역 날씨 → 이모지 마커
 │   │   └── commodityAnalyst.js ← 60분 폴링, Haiku, Perplexity 원자재·운임 가격
 │   └── data/
-│       └── tradePairs.js      ← 15개 교역 쌍 + 계절 인덱스 (CommonJS)
+│       ├── tradePairs.js      ← 15개 교역 쌍 + 계절 인덱스 (CommonJS)
+│       └── destinationNormalizer.js ← destination 정규화 (src/utils/ ESM에서 자동 생성된 CJS 미러)
 │
 └── src/
     ├── main.jsx
@@ -98,6 +99,7 @@ seabird/
     │   ├── claudeClient.js    ← (현재 미사용 — 에이전트가 서버로 이동됨)
     │   ├── supabaseClient.js  ← Supabase 클라이언트 싱글턴
     │   ├── aisParser.js       ← AIS 메시지 → GeoJSON Feature, mmsiToFlag(MID_TO_FLAG 표준 테이블, server와 동기화), mapAISTypeToCategory. flag는 위치보고에도 채움 → 통계/마커 국적 커버리지 ~100%
+    │   ├── destinationNormalizer.js ← AIS destination 자유텍스트 정규화 normalizeDestination()→{country,port,category}. server/data/ 미러(ESM에서 자동 생성)
     │   └── geoUtils.js        ← distanceNm, nmToDeg 등
     │
     └── data/
@@ -131,8 +133,9 @@ CARGO ESTIMATOR (선박 클릭)
 REGION INTEL (항만·초크포인트 클릭 → RegionIntelPanel)
 브라우저 → GET /api/port-stats?portId={id} 또는 /api/chokepoint-stats?cpId={id}
         → 서버가 ships 테이블(최근 1h updated_at)을 BoundingBox 집계 → 실시간 현황 vs 평년 게이지
-        → port-stats는 한 번에 status_breakdown(상태 세분화)·traffic(입출항 추정)·speed_hist·avg_draught까지 반환
+        → port-stats는 한 번에 status_breakdown(상태 세분화)·traffic(입출항 추정)·speed_hist·avg_draught·dest_country_dist(목적지 국가, destination 정규화)까지 반환
           (현황 탭 + 선박 동향 탭이 같은 응답을 공유, 탭 전환 시 추가 요청 없음)
+※ destination은 자유텍스트라 파편화 심함(LOCODE/항구명/작업명 혼재) → `destinationNormalizer.normalizeDestination`으로 국가·항구 분류. 코드류(LOCODE)·주요 항구는 분류되고 군소항 긴 꼬리는 'unknown'(원문 표시). 국가 식별 ~46%(샘플 기준), 상위 빈도 목적지는 대부분 분류됨.
 브라우저 → (뉴스 탭) GET /api/region-news?id={id}&type={type} → Perplexity 영문 검색 → Claude 한국어 번역
 ※ 실시간 현황이 전부 0이면 ships 테이블에 신선한 행이 없다는 뜻 — upsert 실패(아래 nav_status 이슈) 또는 AIS 커버리지 공백을 의심.
 ※ 상태/입출항 파생 지표는 nav_status·destination이 aisstream 무료 티어에서 거의 비어 있어(각 0%·~3%) 100% 채워지는 speed·heading(COG)으로 추정한다: 상태=속력대 구간(정박<0.5 / 대기≤2 / 기동<5 / 항행≥5kn), 입출항=항행 중(≥3kn) 선박의 COG가 항구 중심을 향하면 입항·반대면 출항.
@@ -264,7 +267,8 @@ xiamen, kaohsiung, laem_chabang, jakarta, colombo, savannah, hochiminhcity
 5. **항행 상태 분포** — 도넛 차트 (`nav_status` 기반)
 6. **초크포인트 통과량 vs 기준값** — 심각도별 색상 그룹 막대
 7. **에이전트 경보 타임라인** — 24시간 스택 막대 (CRITICAL/WARNING/INFO)
-8. **목적지 Top 15 + 선종 드릴다운** — 막대 클릭 시 해당 목적지의 선종 분포로 전환
+8. **목적지 Top 15 + 선종 드릴다운** — destination을 `normalizeDestination`으로 정규화해 파편화(NLRTM/NL RTM/ROTTERDAM→로테르담) 통합, 막대 클릭 시 선종 드릴다운
+9. **목적지 국가 Top 10** — destination 정규화 후 국가 단위 집계
 
 데이터 출처: 현재 선박은 store, 초크포인트·경보는 `agent_reports` Supabase 조회.
 

@@ -404,6 +404,14 @@ export default function RegionIntelPanel() {
                     </p>
                   </div>
 
+                  {/* 목적지 국가 분포 (destination 정규화) */}
+                  {liveStats.dest_country_dist?.length > 0 && (
+                    <div className="space-y-1.5">
+                      <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">목적지 국가 (표본 {liveStats.dest_samples}척)</p>
+                      <DistBars rows={liveStats.dest_country_dist.map(d => ({ label: d.country, count: d.count, pct: d.pct }))} color="bg-emerald-500/60" />
+                    </div>
+                  )}
+
                   {/* 선종 분포 */}
                   {liveStats.vessel_type_dist?.length > 0 && (
                     <div className="space-y-1.5">
