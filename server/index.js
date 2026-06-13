@@ -7,7 +7,7 @@ const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
 const { startPortAnalyst, runPortAnalyst, PORTS, HARDCODED_BASELINE: PORT_BASELINE } = require('./agents/portAnalyst');
 const { startChokepointWatcher, runChokepointWatcher, CHOKEPOINTS, HARDCODED_BASELINE: CP_BASELINE } = require('./agents/chokepointWatcher');
-const { resolveBaseline, resolveBaselineStats } = require('./agents/baselineUtils');
+const { resolveBaseline, resolveBaselineStats, MIN_BASELINE_SAMPLES, MIN_BASELINE_SPAN_MS } = require('./agents/baselineUtils');
 const { normalizeDestination } = require('./data/destinationNormalizer');
 const { mmsiToFlag } = require('./data/flag');
 const { aggregatePort, aggregateChokepoint } = require('./agents/trafficAggregator');
@@ -734,20 +734,43 @@ app.get('/api/comparison-board', async (req, res) => {
   try {
     const { locations, hardcoded, higherIsBad } = metricRegistry(metric);
 
-    // 30개 동시(Promise.all) → 4개씩 순차 배치로 IO 스파이크 제거
-    const rows = await runBatched(locations, async (loc) => {
-      const stats = await resolveBaselineStats(supabase, loc.id, metric, hardcoded?.[loc.id]);
-      if (!stats.latest) return null; // 최근 스냅샷 없으면 제외
-      const current = stats.latest.v;
-      const baseline = stats.baseline;
-      const pct = baseline > 0 ? Math.round(((current - baseline) / baseline) * 100) : 0;
-      const z = (stats.std && stats.std > 0)
-        ? Math.round(((current - stats.mean) / stats.std) * 10) / 10
-        : null;
-      return { id: loc.id, name: loc.name, current, baseline, pct, z, n: stats.n };
-    }, 4);
+    // 단일 쿼리로 해당 metric의 최신순 표본을 한 번에 → JS에서 지역별 집계
+    // (과거: 지역마다 resolveBaselineStats 30회 호출 = 적체·throttle 주범. 30쿼리→1쿼리)
+    // 최신순(DESC) + limit로 최근 표본 확보 (PostgREST 행 상한 내에서 지역별 latest는 항상 포함됨)
+    const cutoff90 = new Date(Date.now() - 90 * 24 * 3600000).toISOString();
+    const { data } = await supabase.from('baselines')
+      .select('location_id, current_value, snapshot_at')
+      .eq('metric', metric)
+      .gte('snapshot_at', cutoff90)
+      .order('snapshot_at', { ascending: false })
+      .limit(5000);
 
-    const list = rows.filter(Boolean)
+    const byLoc = {};
+    (data ?? []).forEach(r => {
+      const v = parseFloat(r.current_value), t = Date.parse(r.snapshot_at);
+      if (!(v > 0) || !Number.isFinite(t)) return; // 0 스냅샷(수집 공백) 제외 — resolveBaseline과 동일 정책
+      (byLoc[r.location_id] ??= []).push({ v, t });
+    });
+
+    const list = locations.map((loc) => {
+      const samples = byLoc[loc.id];
+      if (!samples?.length) return null; // 최근 스냅샷 없으면 제외
+      const n = samples.length;
+      let latestT = -Infinity, latestV = null, minT = Infinity, sum = 0;
+      for (const s of samples) {
+        sum += s.v;
+        if (s.t > latestT) { latestT = s.t; latestV = s.v; } // 순서 무관하게 최신값
+        if (s.t < minT) minT = s.t;
+      }
+      const mean = sum / n;
+      const std = Math.sqrt(samples.reduce((a, x) => a + (x.v - mean) ** 2, 0) / n);
+      const hasDynamic = n >= MIN_BASELINE_SAMPLES && (latestT - minT) >= MIN_BASELINE_SPAN_MS;
+      const baseline = hasDynamic && mean > 0 ? Math.round(mean * 10) / 10 : (hardcoded?.[loc.id] ?? 50);
+      const current = latestV;
+      const pct = baseline > 0 ? Math.round(((current - baseline) / baseline) * 100) : 0;
+      const z = std > 0 ? Math.round(((current - mean) / std) * 10) / 10 : null;
+      return { id: loc.id, name: loc.name, current, baseline, pct, z, n };
+    }).filter(Boolean)
       .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct)); // 편차 절대값 큰 순
 
     const payload = { metric, higher_is_bad: higherIsBad, rows: list };

@@ -47,7 +47,7 @@ seabird/
 │   └── generate_character_excel.cjs  ← 캐릭터 엑셀 재생성 스크립트
 │
 ├── server/
-│   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/baseline-history + /api/change-windows + /api/comparison-board + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작 (통계 GET 60초 캐시·comparison-board 4배치)
+│   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/baseline-history + /api/change-windows + /api/comparison-board + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작 (통계 GET 60초 캐시·comparison-board 단일쿼리)
 │   ├── package.json
 │   ├── .env                   ← 서버 환경변수 (git 제외)
 │   ├── agents/
@@ -393,7 +393,7 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 17. **WebGL 미지원 폴백 — `MapView.jsx`**: 에러 바운더리가 없어, WebGL 비활성 브라우저에서 Mapbox 초기화 실패 시 앱 전체가 흰 화면이 됐음 → `new mapboxgl.Map`을 try/catch로 감싸 실패 시 안내 오버레이 표시(`mapError`). `map.on('error')`로 비치명적 타일 에러 콘솔 스팸도 억제.
 18. **지도 선박 색상(선종) 비어 보임 — `useAISStream`**: 라이브 relay PositionReport는 `vessel_type='Other'`로만 들어오고, 과거엔 localStorage 캐시가 신선하면 Supabase 보강을 통째로 생략해 지도가 거의 회색이었음. → `enrichFromSupabase`를 **로드 시 항상 + 3분 주기**로 실행해 서버가 누적한 선종/국적을 지도에 병합(`updated_at` 최신순으로 송신 중 선박과 매칭률↑). Class B 메시지(19/24)도 처리. 효과: 색칠 비율 ~0% → ~55%(무료 티어 선종 수신율 상한 내 최대치). DB 전체 선종 보유율 자체는 ~37%(정적 메시지 희소).
 
-20. **Supabase 무료 티어 Disk IO 예산 → 통계 쿼리 경량화**: 무료/소형 티어는 **Disk IO Budget**(버스트 IOPS)이 있어, 소진되면 baseline IOPS로 강등돼 빈 테이블 쿼리도 수 분 걸리거나 타임아웃(HTTP 000)난다. #19 폭증으로 예산이 바닥난 뒤, 부하 0(=Render Suspend)로 ~8분이면 임계선은 넘지만 무거운 집계 쿼리 몇 개로 즉시 재고갈됨 → 완전 충전엔 더 긴 무부하 시간 필요. **부하를 줄이는 레버는 select 컬럼 수가 아니라(힙 전체를 읽으므로 IO 무관, egress만 절약) ① 빈도 ② 동시성 ③ 캐시**다. 적용: `baselinesWriter` 30→60분, `/api/comparison-board`의 30-wide `Promise.all`→`runBatched(.,4)` 순차 배치, **port-stats·chokepoint-stats·comparison-board·baseline-history에 60초 인메모리 캐시(`statsCache`)** — 패널 여닫을 때마다 ships 재스캔하던 부담 제거. 회복은 Render Suspend + 조용히 대기(무부하 시 IO 예산 자동 충전)뿐이며, 급하면 최소 유료 컴퓨트로 즉시 리셋 가능.
+20. **Supabase 무료 티어 Disk IO 예산 → 통계 쿼리 경량화**: 무료/소형 티어는 **Disk IO Budget**(버스트 IOPS)이 있어, 소진되면 baseline IOPS로 강등돼 빈 테이블 쿼리도 수 분 걸리거나 타임아웃(HTTP 000)난다. #19 폭증으로 예산이 바닥난 뒤, 부하 0(=Render Suspend)로 ~8분이면 임계선은 넘지만 무거운 집계 쿼리 몇 개로 즉시 재고갈됨 → 완전 충전엔 더 긴 무부하 시간 필요. **부하를 줄이는 레버는 select 컬럼 수가 아니라(힙 전체를 읽으므로 IO 무관, egress만 절약) ① 빈도 ② 동시성 ③ 캐시**다. 적용: `baselinesWriter` 30→60분, **`/api/comparison-board`를 지역별 30쿼리(resolveBaselineStats)→ 단일 쿼리(해당 metric 최신순 limit 5000 한 번에 읽어 JS 그룹·집계)로 전환** (이 30쿼리 패턴이 stuck 적체의 주범이었음), **port-stats·chokepoint-stats·comparison-board·baseline-history·change-windows에 60초 인메모리 캐시(`statsCache`)** — 패널 여닫을 때마다 ships 재스캔하던 부담 제거. 회복은 Render Suspend + 조용히 대기(무부하 시 IO 예산 자동 충전)뿐이며, 급하면 컴퓨트 사이즈 변경(Small 등)으로 즉시 리셋(=새 하드웨어 재프로비저닝, 메모리·IO 동시 해소).
 
 19. **`ship_positions` 폭증 → Supabase 리소스 소진 (2026-06-13 수정)**: `index.js`가 글로벌 AIS의 **모든** PositionReport를 그대로 `ship_positions`에 INSERT해, 6h TTL만으로도 **~1,130만 행**이 쌓여 무료 티어 디스크 I/O·autovacuum을 소진(대시보드 "exhausting multiple resources" 경고). 수정: ① **같은 mmsi는 60초당 1건만 저장**(`lastPositionStoredAt` throttle) → 쓰기량 10~30×↓, ② TTL **6h→2h**(`POSITIONS_TTL_MS`), ③ 정리 주기 1h→20분(작은 배치). 추가로 TTL DELETE가 풀스캔하지 않도록 `idx_ship_positions_recorded_at`(recorded_at 단독) 인덱스 필요. **기존 백로그는 `TRUNCATE ship_positions;`(SQL Editor)로 즉시 비워야 함** — 항적은 ephemeral이라 수 분 내 재축적. (ship-track 쿼리는 mmsi당 ~120점/2h로 충분.)
 
