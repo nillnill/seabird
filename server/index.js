@@ -724,6 +724,60 @@ app.get('/api/change-windows', async (req, res) => {
   }
 });
 
+// 원자재 유입 증감 윈도우 — traffic_snapshots.commodity_inflow에서 품목별 DoD/WoW/MoM/YoY.
+// change-windows와 동일 방식(최근 24h 평균 vs N일 전 24h 평균), 단 소스가 traffic_snapshots.
+const INFLOW_METRICS = [
+  { key: 'est_liquid_dwt',   label: '원유·석유제품', unit: '천 DWT', scale: 1000 },
+  { key: 'est_dry_bulk_dwt', label: '건화물',        unit: '천 DWT', scale: 1000 },
+  { key: 'est_container_teu', label: '컨테이너',      unit: '천 TEU', scale: 1000 },
+];
+app.get('/api/inflow-windows', async (req, res) => {
+  const { portId } = req.query;
+  if (!portId) return res.status(400).json({ error: 'portId required' });
+
+  const cacheKey = `inflow:${portId}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const DAY = 86400000, W = 24 * 3600000;
+    const cutoff = new Date(Date.now() - (366 * DAY)).toISOString();
+    const { data } = await supabase.from('traffic_snapshots')
+      .select('commodity_inflow, snapshot_at')
+      .eq('location_id', portId).eq('location_type', 'port')
+      .gte('snapshot_at', cutoff)
+      .order('snapshot_at', { ascending: false })
+      .limit(5000);
+
+    const samples = (data ?? [])
+      .map(r => ({ ci: r.commodity_inflow || {}, t: Date.parse(r.snapshot_at) }))
+      .filter(s => Number.isFinite(s.t));
+
+    const now = Date.now();
+    const avgIn = (a, b, key) => {
+      const xs = samples.filter(s => s.t >= a && s.t < b).map(s => Number(s.ci[key]) || 0);
+      return xs.length ? xs.reduce((p, x) => p + x, 0) / xs.length : null;
+    };
+
+    const commodities = INFLOW_METRICS.map(m => {
+      const cur = avgIn(now - W, now, m.key);
+      const windows = CHANGE_DEFS.map(([key, label, lagDays]) => {
+        const base = avgIn(now - lagDays * DAY - W, now - lagDays * DAY, m.key);
+        const available = cur != null && base != null && base > 0;
+        return { key, label, change_pct: available ? Math.round(((cur - base) / base) * 100) : null, available };
+      });
+      return { key: m.key, label: m.label, unit: m.unit, current: cur != null ? Math.round((cur / m.scale) * 10) / 10 : null, windows };
+    });
+
+    const payload = { port_id: portId, current_n: samples.filter(s => s.t >= now - W).length, commodities };
+    cacheSet(cacheKey, payload);
+    res.json(payload);
+  } catch (err) {
+    console.error('[INFLOW_WINDOWS] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 레이어 3 — 전 지역 평년 대비 편차 랭킹 보드
 app.get('/api/comparison-board', async (req, res) => {
   const { metric = 'waiting_ships' } = req.query;

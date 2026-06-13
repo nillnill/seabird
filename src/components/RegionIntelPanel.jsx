@@ -161,6 +161,44 @@ function ChangeWindows({ data, higherIsBad, unit = '척' }) {
   );
 }
 
+// 원자재 유입 증감 매트릭스 (품목 × DoD/WoW/MoM/YoY) — traffic_snapshots 기반
+function InflowChangeMatrix({ data }) {
+  if (!data?.commodities?.length) return null;
+  const cols = data.commodities[0].windows; // [{key,label}...] 공통 순서
+  const cell = (w) => {
+    if (!w?.available) return <span className="text-white/20">·</span>;
+    const p = w.change_pct;
+    const color = Math.abs(p) < 3 ? 'text-white/55' : p > 0 ? 'text-emerald-400' : 'text-red-400';
+    return <span className={`font-mono ${color}`}>{p > 0 ? '+' : ''}{p}%</span>;
+  };
+  const anyAvail = data.commodities.some(c => c.windows.some(w => w.available));
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">🛢️ 원자재 유입 증감 (추정)</p>
+      <table className="w-full text-[10px]">
+        <thead>
+          <tr className="text-white/30 font-mono">
+            <th className="text-left font-normal py-1">품목</th>
+            {cols.map(c => <th key={c.key} className="text-right font-normal py-1 w-11">{c.label}</th>)}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-white/5">
+          {data.commodities.map(c => (
+            <tr key={c.key}>
+              <td className="py-1 text-white/70 whitespace-nowrap">
+                {c.label}
+                {c.current != null && <span className="text-white/30"> {c.current}{c.unit.includes('TEU') ? '천TEU' : '천t'}</span>}
+              </td>
+              {c.windows.map(w => <td key={w.key} className="text-right py-1">{cell(w)}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {!anyAvail && <p className="text-[9px] text-white/25 leading-snug">※ 유입 이력 누적 중 — DoD는 ~2일, WoW~2주 후부터 표시(데이터가 차면 자동)</p>}
+    </div>
+  );
+}
+
 // 상태 세분화 가로 막대 (정박/대기/기동/항행)
 const STATUS_COLOR = {
   berthed: 'bg-slate-400/70',
@@ -238,6 +276,7 @@ export default function RegionIntelPanel() {
   const [liveStats, setLiveStats] = useState(null);
   const [hist, setHist] = useState(null);
   const [changes, setChanges] = useState(null);
+  const [inflowChanges, setInflowChanges] = useState(null);
   const [news, setNews] = useState(null);
   const [newsLoading, setNewsLoading] = useState(false);
   const newsFetchedRef = useRef(false);
@@ -250,6 +289,7 @@ export default function RegionIntelPanel() {
     setLiveStats(null);
     setHist(null);
     setChanges(null);
+    setInflowChanges(null);
     setNews(null);
     newsFetchedRef.current = false;
 
@@ -274,6 +314,14 @@ export default function RegionIntelPanel() {
       .then(r => r.json())
       .then(d => setChanges(d))
       .catch(() => {});
+
+    // 원자재 유입 증감 (항만 전용 — traffic_snapshots 기반)
+    if (selectedRegion.type === 'port') {
+      fetch(`${PROXY_URL}/api/inflow-windows?portId=${selectedRegion.id}`)
+        .then(r => r.json())
+        .then(d => setInflowChanges(d))
+        .catch(() => {});
+    }
   }, [selectedRegion?.id]);
 
   // 뉴스 탭 클릭 시 lazy fetch
@@ -537,8 +585,9 @@ export default function RegionIntelPanel() {
                     </p>
                   </div>
 
-                  {/* 원자재 유입 추정 (입항 선박 기준) */}
+                  {/* 원자재 유입 추정 (입항 선박 기준) + 증감 매트릭스 */}
                   {liveStats.commodity_inflow && <CommodityInflow ci={liveStats.commodity_inflow} />}
+                  <InflowChangeMatrix data={inflowChanges} />
 
                   {/* 목적지 국가 분포 (destination 정규화) */}
                   {liveStats.dest_country_dist?.length > 0 && (
