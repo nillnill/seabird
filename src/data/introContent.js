@@ -49,7 +49,7 @@ export const ERAS = [
   },
 ];
 
-// Ch3 — Seabird의 가치(해금된 능력)
+// Ch3 — Seabird의 가치(사용할 수 있는 능력)
 export const ABILITIES = [
   { icon: '🛰️', name: '실시간 대양 감시',   desc: '전 세계 AIS 선박을 지도 위에서 실시간 추적. 수천 척의 움직임이 한눈에.' },
   { icon: '🤖', name: '8인의 AI 자문관',    desc: '항만·초크포인트·지정학·기상·원자재·종합·유입·화물을 전담하는 AI가 24시간 보고.' },
@@ -73,6 +73,6 @@ export const TIPS = [
 export const CHAPTERS = [
   { id: 0, kicker: 'CHAPTER 1', title: '지도자 등장' },
   { id: 1, kicker: 'CHAPTER 2', title: '해운의 역사' },
-  { id: 2, kicker: 'CHAPTER 3', title: '해금된 능력' },
+  { id: 2, kicker: 'CHAPTER 3', title: '사용할 수 있는 능력' },
   { id: 3, kicker: 'CHAPTER 4', title: '자문관의 조언' },
 ];

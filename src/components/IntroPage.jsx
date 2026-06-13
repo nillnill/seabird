@@ -67,7 +67,7 @@ function ChapterHistory() {
   );
 }
 
-// ── Ch3: 해금된 능력 ──
+// ── Ch3: 사용할 수 있는 능력 ──
 function ChapterAbilities() {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
