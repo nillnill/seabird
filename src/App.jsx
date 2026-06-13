@@ -9,19 +9,22 @@ import IntroPage from './components/IntroPage.jsx';
 import useStore from './store/useStore.js';
 
 const INTRO_SEEN_KEY = 'seabird_intro_seen_v1';
+// 디폴트 선택 지역 — 인트로가 끝나면 바로 보이도록 부산항을 기본 선택
+const DEFAULT_REGION = { id: 'busan', name: '부산항', type: 'port', lat: 35.1028, lng: 129.0403 };
 
 export default function App() {
-  const { selectedShip, selectedRegion, openIntro } = useStore();
+  const { selectedShip, selectedRegion, openIntro, setSelectedRegion } = useStore();
 
-  // 첫 방문 시 인트로 1회 자동 노출 (이후엔 GNB 버튼으로)
+  // 첫 방문 시 인트로 1회 자동 노출 + 부산항 디폴트 선택(맵도 부산으로 센터링)
   useEffect(() => {
+    setSelectedRegion(DEFAULT_REGION);
     try {
       if (!localStorage.getItem(INTRO_SEEN_KEY)) {
         openIntro();
         localStorage.setItem(INTRO_SEEN_KEY, '1');
       }
     } catch { /* localStorage 비활성 무시 */ }
-  }, [openIntro]);
+  }, [openIntro, setSelectedRegion]);
 
   return (
     <div className="flex flex-col h-screen bg-sea-bg overflow-hidden">

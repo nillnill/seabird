@@ -30,7 +30,16 @@ const useStore = create((set) => ({
 
   // 지역 인텔 패널 (항만 + 초크포인트 통합)
   selectedRegion: null,
-  setSelectedRegion: (region) => set(region ? { selectedRegion: region, selectedShip: null } : { selectedRegion: null }),
+  // 지역 선택 시 그 위치로 맵 자동 센터링(선박처럼). 초크포인트는 넓게(zoom 6), 항만은 가깝게(9).
+  setSelectedRegion: (region) => set(region
+    ? {
+        selectedRegion: region,
+        selectedShip: null,
+        ...(Number.isFinite(region.lat) && Number.isFinite(region.lng)
+          ? { mapCenter: [region.lng, region.lat], mapZoom: region.type === 'chokepoint' ? 6 : 9 }
+          : {}),
+      }
+    : { selectedRegion: null }),
 
   // 피드 상태
   reports: [],
