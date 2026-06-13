@@ -61,7 +61,7 @@ seabird/
 │   │   ├── weatherAgent.js    ← 30분 폴링, Haiku, Open-Meteo 13개 해역 날씨 → 이모지 마커
 │   │   ├── commodityAnalyst.js ← 60분 폴링, Haiku, Perplexity 원자재·운임 가격
 │   │   ├── flowReporter.js    ← 6시간 폴링, Haiku, traffic_snapshots 이력 → 항만 원자재 유입 추세(DoD)
-│   │   └── baselinesWriter.js ← 30분 폴링, aggregator로 전 지역 1회 집계 → baselines(스칼라)+traffic_snapshots(분해) 동시 적재
+│   │   └── baselinesWriter.js ← 60분 폴링, aggregator로 전 지역 1회 집계 → baselines(스칼라)+traffic_snapshots(분해) 동시 적재 (무료 티어 Disk IO 절약 위해 30→60분)
 │   └── data/
 │       ├── tradePairs.js      ← 15개 교역 쌍 + 계절 인덱스 (CommonJS)
 │       ├── flag.js            ← MID_TO_FLAG(MMSI MID→ISO3)·mmsiToFlag 단일 소스 (index.js·trafficAggregator 공용)
@@ -340,7 +340,7 @@ node_modules/.bin/vite build   # npx vite 사용 금지 (vite@8 설치 문제)
 | `ship_positions` | AIS 위치 이력 (2시간 TTL) |
 | `agent_reports` | 에이전트 보고 카드 (Realtime 활성화, anon 읽기 허용) |
 | `baselines` | 항만/초크포인트 **스칼라** 스냅샷 (waiting_ships·daily_throughput, 시계열 누적) |
-| `traffic_snapshots` | 항만/초크포인트 **분해** 스냅샷 (입출항·선종·기국·목적지·원자재 유입 추정, 30분, JSONB) — FLOW REPORTER 소스 |
+| `traffic_snapshots` | 항만/초크포인트 **분해** 스냅샷 (입출항·선종·기국·목적지·원자재 유입 추정, 60분, JSONB) — FLOW REPORTER 소스 |
 
 ### ships 테이블 주요 컬럼
 
@@ -392,6 +392,8 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 16. **보고 카드 중복 key 방지 — `useStore.addReport`**: 초기 로드(50건) + Realtime 구독 + React StrictMode 이중 마운트로 같은 `agent_reports` 행이 중복 추가돼 React "duplicate key" 경고가 대량 발생했음 → `addReport`가 동일 `id` 존재 시 무시. (브라우저 콘솔 점검은 헤드리스 Chrome+CDP로 가능: 단 WebGL이 없으면 Mapbox가 죽으므로 `--enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader`로 SW 렌더 활성화 필요.)
 17. **WebGL 미지원 폴백 — `MapView.jsx`**: 에러 바운더리가 없어, WebGL 비활성 브라우저에서 Mapbox 초기화 실패 시 앱 전체가 흰 화면이 됐음 → `new mapboxgl.Map`을 try/catch로 감싸 실패 시 안내 오버레이 표시(`mapError`). `map.on('error')`로 비치명적 타일 에러 콘솔 스팸도 억제.
 18. **지도 선박 색상(선종) 비어 보임 — `useAISStream`**: 라이브 relay PositionReport는 `vessel_type='Other'`로만 들어오고, 과거엔 localStorage 캐시가 신선하면 Supabase 보강을 통째로 생략해 지도가 거의 회색이었음. → `enrichFromSupabase`를 **로드 시 항상 + 3분 주기**로 실행해 서버가 누적한 선종/국적을 지도에 병합(`updated_at` 최신순으로 송신 중 선박과 매칭률↑). Class B 메시지(19/24)도 처리. 효과: 색칠 비율 ~0% → ~55%(무료 티어 선종 수신율 상한 내 최대치). DB 전체 선종 보유율 자체는 ~37%(정적 메시지 희소).
+
+20. **Supabase 무료 티어 Disk IO 예산 → 통계 쿼리 경량화**: 무료/소형 티어는 **Disk IO Budget**(버스트 IOPS)이 있어, 소진되면 baseline IOPS로 강등돼 빈 테이블 쿼리도 수 분 걸리거나 타임아웃(HTTP 000)난다. #19 폭증으로 예산이 바닥난 뒤, 부하 0(=Render Suspend)로 ~8분이면 임계선은 넘지만 무거운 집계 쿼리 몇 개로 즉시 재고갈됨 → 완전 충전엔 더 긴 무부하 시간 필요. **부하를 줄이는 레버는 select 컬럼 수가 아니라(힙 전체를 읽으므로 IO 무관, egress만 절약) ① 빈도 ② 동시성 ③ 캐시**다. 적용: `baselinesWriter` 30→60분, `/api/comparison-board`의 30-wide `Promise.all`→`runBatched(.,4)` 순차 배치, **port-stats·chokepoint-stats·comparison-board·baseline-history에 60초 인메모리 캐시(`statsCache`)** — 패널 여닫을 때마다 ships 재스캔하던 부담 제거. 회복은 Render Suspend + 조용히 대기(무부하 시 IO 예산 자동 충전)뿐이며, 급하면 최소 유료 컴퓨트로 즉시 리셋 가능.
 
 19. **`ship_positions` 폭증 → Supabase 리소스 소진 (2026-06-13 수정)**: `index.js`가 글로벌 AIS의 **모든** PositionReport를 그대로 `ship_positions`에 INSERT해, 6h TTL만으로도 **~1,130만 행**이 쌓여 무료 티어 디스크 I/O·autovacuum을 소진(대시보드 "exhausting multiple resources" 경고). 수정: ① **같은 mmsi는 60초당 1건만 저장**(`lastPositionStoredAt` throttle) → 쓰기량 10~30×↓, ② TTL **6h→2h**(`POSITIONS_TTL_MS`), ③ 정리 주기 1h→20분(작은 배치). 추가로 TTL DELETE가 풀스캔하지 않도록 `idx_ship_positions_recorded_at`(recorded_at 단독) 인덱스 필요. **기존 백로그는 `TRUNCATE ship_positions;`(SQL Editor)로 즉시 비워야 함** — 항적은 ephemeral이라 수 분 내 재축적. (ship-track 쿼리는 mmsi당 ~120점/2h로 충분.)
 

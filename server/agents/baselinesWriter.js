@@ -3,7 +3,7 @@ const { PORTS } = require('./portAnalyst');
 const { CHOKEPOINTS } = require('./chokepointWatcher');
 const { aggregatePort, aggregateChokepoint } = require('./trafficAggregator');
 
-const POLL_INTERVAL_MS = 30 * 60 * 1000; // 30분
+const POLL_INTERVAL_MS = 60 * 60 * 1000; // 60분 (무료 티어 Disk IO 절약 — 전 지역 집계가 회당 무겁다)
 
 // ※ 하드코딩 평년 기준값은 portAnalyst.js(HARDCODED_BASELINE)·chokepointWatcher.js가 단일 소스.
 //   baselinesWriter는 실측 스냅샷만 기록한다.

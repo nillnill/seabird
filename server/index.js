@@ -530,10 +530,36 @@ app.post('/api/orchestrate', async (req, res) => {
 
 // 집계/방위/거리 헬퍼는 trafficAggregator.js로 이동(공유). port-stats·chokepoint-stats가 그 모듈을 사용.
 
+// ── 읽기 무거운 GET 통계 엔드포인트 60초 인메모리 캐시 (무료 티어 Disk IO 절약) ──
+// 패널을 여닫을 때마다 ships 테이블을 재스캔하던 부담을 제거. 신선도 60초면 충분.
+const STATS_CACHE_TTL_MS = 60 * 1000;
+const statsCache = new Map(); // key → { ts, data }
+function cacheGet(key) {
+  const e = statsCache.get(key);
+  if (e && Date.now() - e.ts < STATS_CACHE_TTL_MS) return e.data;
+  if (e) statsCache.delete(key);
+  return null;
+}
+function cacheSet(key, data) {
+  statsCache.set(key, { ts: Date.now(), data });
+  if (statsCache.size > 300) statsCache.delete(statsCache.keys().next().value); // 단순 상한
+}
+// 동시 쿼리 폭주 방지 — items를 size개씩 순차 배치로 처리 (30-wide Promise.all IO 스파이크 제거)
+async function runBatched(items, fn, size = 4) {
+  const out = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(...await Promise.all(items.slice(i, i + size).map(fn)));
+  }
+  return out;
+}
+
 app.get('/api/port-stats', async (req, res) => {
   const { portId } = req.query;
   const port = PORTS?.find(p => p.id === portId);
   if (!port) return res.status(404).json({ error: 'port not found' });
+
+  const cached = cacheGet(`port:${portId}`);
+  if (cached) return res.json(cached);
 
   try {
     const agg = await aggregatePort(supabase, port);
@@ -547,12 +573,14 @@ app.get('/api/port-stats', async (req, res) => {
     // 평년: 충분한 실측 이력이 쌓이면 동적 평균, 그 전엔 하드코딩 기준값 (chokepoint와 동일 정책)
     const baselineWaiting = await resolveBaseline(supabase, port.id, 'waiting_ships', PORT_BASELINE?.[port.id] ?? 10);
 
-    res.json({
+    const payload = {
       port: { id: port.id, name: port.name, lat: port.lat, lng: port.lng },
       baseline_waiting: baselineWaiting,
       ...agg,
       recent_reports: reports ?? [],
-    });
+    };
+    cacheSet(`port:${portId}`, payload);
+    res.json(payload);
   } catch (err) {
     console.error('[PORT_STATS] error:', err.message);
     res.status(500).json({ error: err.message });
@@ -564,6 +592,9 @@ app.get('/api/chokepoint-stats', async (req, res) => {
   const cp = CHOKEPOINTS?.find(c => c.id === cpId);
   if (!cp) return res.status(404).json({ error: 'chokepoint not found' });
 
+  const cached = cacheGet(`cp:${cpId}`);
+  if (cached) return res.json(cached);
+
   try {
     const agg = await aggregateChokepoint(supabase, cp);
     const total = agg.current_ships;
@@ -572,7 +603,9 @@ app.get('/api/chokepoint-stats', async (req, res) => {
     const baseline = await resolveBaseline(supabase, cpId, 'daily_throughput', CP_BASELINE?.[cpId] ?? 50);
     const change_pct = baseline > 0 ? Math.round(((total - baseline) / baseline) * 100) : 0;
 
-    res.json({ ...agg, baseline, change_pct });
+    const payload = { ...agg, baseline, change_pct };
+    cacheSet(`cp:${cpId}`, payload);
+    res.json(payload);
   } catch (err) {
     console.error('[CHOKEPOINT_STATS] error:', err.message);
     res.status(500).json({ error: err.message });
@@ -604,6 +637,10 @@ app.get('/api/baseline-history', async (req, res) => {
   const { locationId, metric = 'daily_throughput', hours = '48' } = req.query;
   if (!locationId) return res.status(400).json({ error: 'locationId required' });
 
+  const cacheKey = `hist:${locationId}:${metric}:${hours}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
   try {
     const { hardcoded } = metricRegistry(metric);
     const windowMs = Math.min(Math.max(parseInt(hours, 10) || 48, 1), 90 * 24) * 3600000;
@@ -614,7 +651,7 @@ app.get('/api/baseline-history', async (req, res) => {
       ? Math.round(((latest.v - stats.mean) / stats.std) * 10) / 10
       : null;
 
-    res.json({
+    const payload = {
       location_id: locationId,
       metric,
       series: stats.samples.map(s => ({ t: new Date(s.t).toISOString(), v: s.v })),
@@ -626,7 +663,9 @@ app.get('/api/baseline-history', async (req, res) => {
       latest,
       z,
       trend: trendOf(stats.samples),
-    });
+    };
+    cacheSet(cacheKey, payload);
+    res.json(payload);
   } catch (err) {
     console.error('[BASELINE_HISTORY] error:', err.message);
     res.status(500).json({ error: err.message });
@@ -636,10 +675,15 @@ app.get('/api/baseline-history', async (req, res) => {
 // 레이어 3 — 전 지역 평년 대비 편차 랭킹 보드
 app.get('/api/comparison-board', async (req, res) => {
   const { metric = 'waiting_ships' } = req.query;
+
+  const cached = cacheGet(`board:${metric}`);
+  if (cached) return res.json(cached);
+
   try {
     const { locations, hardcoded, higherIsBad } = metricRegistry(metric);
 
-    const rows = await Promise.all(locations.map(async (loc) => {
+    // 30개 동시(Promise.all) → 4개씩 순차 배치로 IO 스파이크 제거
+    const rows = await runBatched(locations, async (loc) => {
       const stats = await resolveBaselineStats(supabase, loc.id, metric, hardcoded?.[loc.id]);
       if (!stats.latest) return null; // 최근 스냅샷 없으면 제외
       const current = stats.latest.v;
@@ -649,12 +693,14 @@ app.get('/api/comparison-board', async (req, res) => {
         ? Math.round(((current - stats.mean) / stats.std) * 10) / 10
         : null;
       return { id: loc.id, name: loc.name, current, baseline, pct, z, n: stats.n };
-    }));
+    }, 4);
 
     const list = rows.filter(Boolean)
       .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct)); // 편차 절대값 큰 순
 
-    res.json({ metric, higher_is_bad: higherIsBad, rows: list });
+    const payload = { metric, higher_is_bad: higherIsBad, rows: list };
+    cacheSet(`board:${metric}`, payload);
+    res.json(payload);
   } catch (err) {
     console.error('[COMPARISON_BOARD] error:', err.message);
     res.status(500).json({ error: err.message });
