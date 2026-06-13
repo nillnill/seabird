@@ -26,7 +26,7 @@ function CpChip({ cpId, changePct, severity }) {
 }
 
 export default function StatusBar() {
-  const { wsStatus, shipCount, reports, toggleStatsDashboard } = useStore();
+  const { wsStatus, shipCount, reports, toggleStatsDashboard, openIntro } = useStore();
   const { dot, label } = STATUS_CONFIG[wsStatus] ?? STATUS_CONFIG.DISCONNECTED;
 
   // 초크포인트별 최신 보고에서 비교 수치 추출
@@ -52,6 +52,13 @@ export default function StatusBar() {
           <span className="text-sea-muted">
             <span className="text-white">{shipCount.toLocaleString()}</span> vessels
           </span>
+          <button
+            onClick={openIntro}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-sea-border hover:border-blue-500/60 hover:bg-blue-900/20 text-sea-muted hover:text-blue-400 transition-colors"
+          >
+            <span>📜</span>
+            <span>인트로</span>
+          </button>
           <button
             onClick={toggleStatsDashboard}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-sea-border hover:border-blue-500/60 hover:bg-blue-900/20 text-sea-muted hover:text-blue-400 transition-colors"

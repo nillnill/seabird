@@ -73,6 +73,11 @@ const useStore = create((set) => ({
   showStatsDashboard: false,
   toggleStatsDashboard: () => set((state) => ({ showStatsDashboard: !state.showStatsDashboard })),
 
+  // 인트로 페이지 (첫 방문 자동 + GNB 버튼)
+  showIntro: false,
+  openIntro: () => set({ showIntro: true }),
+  closeIntro: () => set({ showIntro: false }),
+
   // 날씨 마커 (WeatherMarkers용) — 감시 지점별 이모지/심각도
   weatherMarkers: [],
   setWeatherMarkers: (points) => set({ weatherMarkers: points }),

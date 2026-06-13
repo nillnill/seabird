@@ -37,7 +37,7 @@ seabird/
 ├── .env.local                 ← 프론트엔드 환경변수 (git 제외)
 │
 ├── public/
-│   └── characters/            ← 캐릭터 이미지 에셋 (45개 WebP, 투명 배경·512px·품질85로 최적화 — 합계 ~0.9MB)
+│   └── characters/            ← 캐릭터 이미지 에셋 (WebP, 투명 배경·512px·품질85로 최적화). 45개 캐릭터 + 인트로용 Malcolm_McLean.webp·era_*.webp(6 시대 일러스트)
 │       ├── ship_container.webp ~ ship_other.webp  (선박 타입 8개)
 │       └── region_suez.webp ~ region_hochiminhcity.webp  (지역 37개)
 │
@@ -91,7 +91,8 @@ seabird/
     │   ├── ShipDetailPanel.jsx ← 선박 클릭 상세 (좌측 떠 있는 카드, 캐릭터 헤더 + 3탭: 현황/화물추정/항적). 선택 시 Supabase ships 전체 행 보강(dbShip) → 지도 피처(Other)보다 우선해 **캐릭터·선종·색상 일관성** 확보. 현황 탭: 항행상태 배지(nav_status 우선, 없으면 속력 추정) + 데이터 기반 캐릭터 브리핑(buildNarration: 목적지+선종+속력+상태+ETA) + 목적지(normalizeDestination+17k LOCODE_MAP로 "대만 / 가오슝"식)·흘수·DWT·침로·갱신시각. 항적 탭 fetch가 setShipTrack → MapView 경로 시각화
     │   ├── FeedFilter.jsx     ← 에이전트별 필터 토글
     │   ├── StatusBar.jsx      ← 상단 상태 표시줄 (📊 통계 대시보드 토글 버튼)
-    │   └── StatsDashboard.jsx ← 통계 대시보드 모달 (Recharts, 10개 섹션 — 평년 대비 편차 보드 포함, /api/comparison-board)
+    │   ├── StatsDashboard.jsx ← 통계 대시보드 모달 (Recharts, 10개 섹션 — 평년 대비 편차 보드 포함, /api/comparison-board)
+    │   └── IntroPage.jsx      ← 인트로 오버레이 (문명 게임 스타일, 맬컴 맥린 지도자 + 챕터형 4막: 지도자/역사 기술트리/능력/팁). 첫 방문 자동 1회(localStorage `seabird_intro_seen_v1`) + GNB 📜 인트로 버튼. 이미지 emoji fallback. 콘텐츠는 introContent.js
     │
     ├── hooks/
     │   ├── useAISStream.js    ← ws://localhost:3001/relay 연결 + localStorage 즉시 복원(10분 TTL) + Supabase 선종/국적 보강(enrichFromSupabase: 로드 시 항상 + 3분 주기, updated_at 최신순) + Class B(19/24) 처리 → 지도 선종 색상. flushBuffer가 `shipOverrides`(선택 선박 dbShip 보강)를 매 500ms 적용 → 클릭 즉시 마커 색상 일치
@@ -110,6 +111,7 @@ seabird/
     └── data/
         ├── regionData.js      ← 37개 지역 데이터 (초크포인트 7 + 항만 30): 캐릭터·통계·역사·newsQuery·image
         ├── shipCharacters.js  ← 선박 타입별 창작 캐릭터 8개 (직함·quote·bgColor·image 경로)
+        ├── introContent.js    ← 인트로 페이지 콘텐츠 (MALCOLM 지도자·ERAS 6시대·ABILITIES·TIPS·CHAPTERS). IntroPage.jsx가 소비
         ├── tradePairs.js      ← (브라우저용 ESM 버전, 현재 미사용)
         └── hardcodedBaselines.js ← (서버 에이전트에 인라인됨)
 ```
