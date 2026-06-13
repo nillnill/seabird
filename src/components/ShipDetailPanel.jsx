@@ -3,6 +3,7 @@ import useStore from '../store/useStore.js';
 import { runCargoEstimator } from '../agents/cargoEstimator.js';
 import { SHIP_CHARACTERS } from '../data/shipCharacters.js';
 import { LOCODE_MAP } from '../data/locodeMap.js';
+import { supabase } from '../utils/supabaseClient.js';
 
 const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
 
@@ -132,6 +133,32 @@ const NAV_STATUS_KO = {
   8:  { label: '항행 중(범선)', color: '#22C55E' },
   14: { label: 'AIS-SART',     color: '#EF4444' },
 };
+
+// AIS nav_status가 있으면 우선 사용, 없으면(무료 티어는 대부분 null) 속력으로 항행 상태 추정.
+function deriveNavStatus(ship) {
+  if (ship.nav_status != null && NAV_STATUS_KO[ship.nav_status]) {
+    return { ...NAV_STATUS_KO[ship.nav_status], inferred: false, icon: ship.nav_status === 1 ? '⚓' : ship.nav_status === 5 ? '🛟' : '🚢' };
+  }
+  const sp = ship.speed;
+  if (sp == null) return { label: '정보 없음', color: '#6B7280', inferred: false, icon: '❔' };
+  if (sp < 0.5) return { label: '정박·계류', color: '#60A5FA', inferred: true, icon: '⚓' };
+  if (sp < 3)   return { label: '저속 기동·대기', color: '#FBBF24', inferred: true, icon: '🐢' };
+  if (sp < 5)   return { label: '입출항 기동', color: '#38BDF8', inferred: true, icon: '🚢' };
+  return { label: '운항 중', color: '#22C55E', inferred: true, icon: '🚢' };
+}
+
+// 마지막 수신 시각 → "N분 전"
+function timeAgo(ts) {
+  if (!ts) return null;
+  const ms = Date.now() - new Date(ts).getTime();
+  if (isNaN(ms)) return null;
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return '방금 전';
+  if (m < 60) return `${m}분 전`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}시간 전`;
+  return `${Math.floor(h / 24)}일 전`;
+}
 
 function formatEta(eta) {
   if (!eta) return null;
@@ -275,6 +302,7 @@ export default function ShipDetailPanel() {
   const [trackData, setTrackData] = useState([]);
   const [activeTab, setActiveTab] = useState('info');
   const [showVesselInfo, setShowVesselInfo] = useState(false);
+  const [dbShip, setDbShip] = useState(null); // Supabase ships 전체 행 (흘수·침로·갱신시각 등 보강)
 
   // 선박 변경 시: 화물추정 상태 초기화(AI 호출은 '화물 추정' 탭 진입 시) + 항적 로드
   useEffect(() => {
@@ -283,6 +311,7 @@ export default function ShipDetailPanel() {
       setCargoError(null);
       setCargoLoading(false);
       setTrackData([]);
+      setDbShip(null);
       clearShipTrack();
       return;
     }
@@ -291,6 +320,12 @@ export default function ShipDetailPanel() {
     setCargoLoading(false);
     setActiveTab('info');
     setShowVesselInfo(false);
+    setDbShip(null);
+
+    // 전체 ship 행 보강 (흘수·침로·dwt·갱신시각 등 — 지도 피처엔 없는 필드)
+    supabase.from('ships').select('*').eq('mmsi', selectedShip.mmsi).single()
+      .then(({ data }) => { if (data) setDbShip(data); })
+      .catch(() => {});
 
     fetch(`${PROXY_URL}/api/ship-track?mmsi=${encodeURIComponent(selectedShip.mmsi)}`)
       .then(r => r.json())
@@ -316,9 +351,27 @@ export default function ShipDetailPanel() {
 
   if (!selectedShip) return null;
 
-  const navInfo = NAV_STATUS_KO[selectedShip.nav_status];
-  const etaStr = formatEta(selectedShip.eta);
-  const flagEmoji = toFlagEmoji(selectedShip.flag_country);
+  // 지도 피처(라이브) 기준 + Supabase 행으로 빈 필드 보강 (라이브 위치/속력이 우선)
+  const ship = { ...selectedShip };
+  if (dbShip) {
+    for (const k in dbShip) { if (ship[k] == null || ship[k] === '') ship[k] = dbShip[k]; }
+    if (dbShip.vessel_type && dbShip.vessel_type !== 'Other' && (!ship.vessel_type || ship.vessel_type === 'Other')) {
+      ship.vessel_type = dbShip.vessel_type;
+    }
+  }
+
+  const navState = deriveNavStatus(ship);
+  const etaStr = formatEta(ship.eta);
+  const lastSeen = timeAgo(ship.updated_at);
+  const destNorm = formatDestination(ship.destination);
+  const flagEmoji = toFlagEmoji(ship.flag_country);
+  const _sp = ship.speed;
+  const _hasDest = destNorm && destNorm !== '-';
+  const activitySummary =
+    _sp != null && _sp >= 3 ? (_hasDest ? `${destNorm} 방면으로 항행 중` : '항행 중')
+    : _sp != null && _sp < 0.5 ? '정지 — 부두 접안 또는 정박 추정'
+    : _sp != null ? '저속 기동 — 입출항·대기 추정'
+    : (_hasDest ? `목적지: ${destNorm}` : '추가 정보 수신 대기 중');
   const character = SHIP_CHARACTERS[selectedShip.vessel_type] ?? SHIP_CHARACTERS['Other'];
 
   return (
@@ -425,6 +478,28 @@ export default function ShipDetailPanel() {
           {/* ── 현황 탭 ── */}
           {activeTab === 'info' && (
             <div className="p-4 space-y-4">
+              {/* 항행 상태 배지 (nav_status 우선, 없으면 속력 추정) */}
+              <div className="rounded-xl p-3 border" style={{ borderColor: `${navState.color}55`, background: `${navState.color}14` }}>
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl shrink-0">{navState.icon}</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-bold" style={{ color: navState.color }}>{navState.label}</span>
+                      {navState.inferred && (
+                        <span className="text-[8px] px-1 py-0.5 rounded bg-white/10 text-white/40" title="AIS 항행상태 미수신 → 속력으로 추정">속력 추정</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-white/60 mt-0.5 truncate">{activitySummary}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-lg font-mono font-bold text-white leading-none">
+                      {ship.speed ?? '-'}<span className="text-[9px] text-white/40 ml-0.5">kn</span>
+                    </p>
+                    {lastSeen && <p className="text-[8px] text-white/30 mt-1">{lastSeen} 수신</p>}
+                  </div>
+                </div>
+              </div>
+
               {/* 선박 정보 */}
               <div>
                 <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest mb-2">🚢 선박 정보</p>
@@ -436,14 +511,14 @@ export default function ShipDetailPanel() {
                   >
                     <span className="text-[10px] text-white/40 font-mono shrink-0 mr-2">선종</span>
                     <span className="flex items-center gap-2 text-[11px] font-mono text-white/90">
-                      {VESSEL_TYPE_KO[selectedShip.vessel_type] ?? selectedShip.vessel_type}
+                      {VESSEL_TYPE_KO[ship.vessel_type] ?? ship.vessel_type}
                       <span className="text-[9px] px-1 py-0.5 rounded bg-blue-500/15 text-blue-400/80 group-hover:bg-blue-500/25 transition-colors">
                         {showVesselInfo ? '접기' : '알아보기'}
                       </span>
                     </span>
                   </button>
                   {showVesselInfo && (() => {
-                    const info = VESSEL_TYPE_INFO[selectedShip.vessel_type] ?? VESSEL_TYPE_INFO['Other'];
+                    const info = VESSEL_TYPE_INFO[ship.vessel_type] ?? VESSEL_TYPE_INFO['Other'];
                     return (
                       <div className="mt-1 mb-2 rounded-lg overflow-hidden border border-white/10 text-[11px]"
                            style={{ background: `linear-gradient(135deg, ${character.bgFrom}cc, ${character.bgTo}cc)` }}>
@@ -481,15 +556,12 @@ export default function ShipDetailPanel() {
                     );
                   })()}
                 </div>
-                <InfoRow
-                  label="운항 상태"
-                  value={navInfo?.label}
-                  valueColor={navInfo?.color}
-                />
-                <InfoRow label="목적지" value={formatDestination(selectedShip.destination)} />
+                <InfoRow label="목적지" value={destNorm} />
                 <InfoRow label="도착 예정" value={etaStr} />
-                <InfoRow label="IMO" value={selectedShip.imo} />
-                <InfoRow label="콜사인" value={selectedShip.call_sign} />
+                <InfoRow label="흘수" value={ship.draught != null ? `${ship.draught} m` : null} />
+                <InfoRow label="DWT" value={ship.dwt != null ? `${Number(ship.dwt).toLocaleString()} t` : null} />
+                <InfoRow label="IMO" value={ship.imo} />
+                <InfoRow label="콜사인" value={ship.call_sign} />
               </div>
 
               {/* 속도·위치 */}
@@ -497,9 +569,9 @@ export default function ShipDetailPanel() {
                 <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest mb-2">📡 현재 위치</p>
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { label: '속도', value: `${selectedShip.speed ?? '-'} kn` },
-                    { label: '위도',  value: selectedShip.lat?.toFixed(3) ?? '-' },
-                    { label: '경도',  value: selectedShip.lng?.toFixed(3) ?? '-' },
+                    { label: '침로', value: (ship.course ?? ship.heading) != null ? `${ship.course ?? ship.heading}°` : '-' },
+                    { label: '위도',  value: ship.lat?.toFixed(3) ?? '-' },
+                    { label: '경도',  value: ship.lng?.toFixed(3) ?? '-' },
                   ].map(({ label, value }) => (
                     <div key={label} className="bg-white/5 rounded-lg px-2 py-2 text-center">
                       <p className="text-[9px] text-white/40 font-mono">{label}</p>

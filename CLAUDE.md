@@ -83,7 +83,7 @@ seabird/
     │   ├── CommanderInput.jsx ← 자연어 입력창
     │   ├── ReportCard.jsx     ← 에이전트 보고 카드 (MASTER_AGENT: 보라색)
     │   ├── ReportModal.jsx    ← 상세 보기 모달
-    │   ├── ShipDetailPanel.jsx ← 선박 클릭 상세 (좌측 떠 있는 카드, 캐릭터 헤더 + 3탭: 현황/화물추정/항적). 항적 탭 fetch가 setShipTrack → MapView가 지도에 경로 선+시작/현재 점 표시 + fitBounds
+    │   ├── ShipDetailPanel.jsx ← 선박 클릭 상세 (좌측 떠 있는 카드, 캐릭터 헤더 + 3탭: 현황/화물추정/항적). 현황 탭: 항행상태 배지(nav_status 우선, 없으면 속력 추정: 정박·계류/저속/입출항기동/운항) + 활동 요약 + 목적지(정규화)·흘수·DWT·침로·갱신시각. 선택 시 Supabase ships 전체 행을 보강 조회(dbShip). 항적 탭 fetch가 setShipTrack → MapView가 지도에 경로 선+시작/현재 점 표시 + fitBounds
     │   ├── FeedFilter.jsx     ← 에이전트별 필터 토글
     │   ├── StatusBar.jsx      ← 상단 상태 표시줄 (📊 통계 대시보드 토글 버튼)
     │   └── StatsDashboard.jsx ← 통계 대시보드 모달 (Recharts, 8개 섹션)
