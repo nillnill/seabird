@@ -437,6 +437,17 @@ export default function RegionIntelPanel() {
           {/* ── 현황 탭 ── */}
           {activeTab === 'stats' && (
             <div className="p-4 space-y-4">
+              {/* 지역명 헤더 (어느 항만/초크포인트인지 명확히) */}
+              <div className="flex items-center gap-2.5 pb-3 border-b border-white/10">
+                <span className="text-2xl leading-none">{character.flagEmoji}</span>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-white leading-tight truncate">{selectedRegion.name}</h3>
+                  <p className="text-[9px] text-white/40 font-mono uppercase tracking-widest">
+                    {data.type === 'port' ? '🏗️ 항만 PORT' : '🚢 초크포인트 CHOKEPOINT'}
+                  </p>
+                </div>
+              </div>
+
               {/* 글로벌 통계 */}
               <div>
                 <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest mb-2">📊 글로벌 통계</p>
