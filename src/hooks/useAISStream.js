@@ -109,10 +109,28 @@ export function useAISStream(mapRef) {
     const source = mapRef.current.getSource('ships');
     if (!source) return;
 
-    if (bufferRef.current.length === 0) return;
+    let changed = false;
+    if (bufferRef.current.length) {
+      bufferRef.current.forEach((f) => shipMapRef.current.set(f.properties.mmsi, f));
+      bufferRef.current = [];
+      changed = true;
+    }
 
-    bufferRef.current.forEach((f) => shipMapRef.current.set(f.properties.mmsi, f));
-    bufferRef.current = [];
+    // 선택 선박 보강 오버라이드 적용 — 패널이 dbShip으로 알아낸 선종/국적을 마커에 즉시 반영
+    const overrides = useStore.getState().shipOverrides;
+    for (const mmsi in overrides) {
+      const f = shipMapRef.current.get(mmsi);
+      if (!f) continue;
+      const p = overrides[mmsi];
+      if (p.vessel_type && p.vessel_type !== 'Other' && f.properties.vessel_type !== p.vessel_type) {
+        f.properties.vessel_type = p.vessel_type; changed = true;
+      }
+      if (p.flag_country && f.properties.flag_country !== p.flag_country) {
+        f.properties.flag_country = p.flag_country; changed = true;
+      }
+    }
+
+    if (!changed) return;
 
     const features = Array.from(shipMapRef.current.values());
     source.setData({ type: 'FeatureCollection', features });

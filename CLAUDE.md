@@ -89,7 +89,7 @@ seabird/
     │   └── StatsDashboard.jsx ← 통계 대시보드 모달 (Recharts, 8개 섹션)
     │
     ├── hooks/
-    │   ├── useAISStream.js    ← ws://localhost:3001/relay 연결 + localStorage 즉시 복원(10분 TTL) + Supabase 선종/국적 보강(enrichFromSupabase: 로드 시 항상 + 3분 주기, updated_at 최신순) + Class B(19/24) 처리 → 지도 선종 색상
+    │   ├── useAISStream.js    ← ws://localhost:3001/relay 연결 + localStorage 즉시 복원(10분 TTL) + Supabase 선종/국적 보강(enrichFromSupabase: 로드 시 항상 + 3분 주기, updated_at 최신순) + Class B(19/24) 처리 → 지도 선종 색상. flushBuffer가 `shipOverrides`(선택 선박 dbShip 보강)를 매 500ms 적용 → 클릭 즉시 마커 색상 일치
     │   └── useAgentReports.js ← Supabase Realtime 구독 (에이전트 보고 수신)
     │
     ├── store/

@@ -356,7 +356,16 @@ export default function ShipDetailPanel() {
 
     // 전체 ship 행 보강 (흘수·침로·dwt·갱신시각 등 — 지도 피처엔 없는 필드)
     supabase.from('ships').select('*').eq('mmsi', selectedShip.mmsi).single()
-      .then(({ data }) => { if (data) setDbShip(data); })
+      .then(({ data }) => {
+        if (!data) return;
+        setDbShip(data);
+        // 지도 마커도 즉시 색상/국적 일치 (지도 피처가 'Other'여도 dbShip 선종으로 덮음)
+        if ((data.vessel_type && data.vessel_type !== 'Other') || data.flag_country) {
+          useStore.getState().setShipOverride(String(selectedShip.mmsi), {
+            vessel_type: data.vessel_type, flag_country: data.flag_country,
+          });
+        }
+      })
       .catch(() => {});
 
     fetch(`${PROXY_URL}/api/ship-track?mmsi=${encodeURIComponent(selectedShip.mmsi)}`)
