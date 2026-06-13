@@ -45,19 +45,22 @@ export function useAISStream(mapRef) {
       }
     } catch { /* localStorage 비활성화 또는 파싱 실패 무시 */ }
 
-    // 캐시가 신선하면(10분 이내) Supabase 전체 재조회를 생략 —
-    // 이후 위치는 라이브 WebSocket이 갱신하고, flushBuffer가 캐시를 따뜻하게 유지
-    if (cacheFresh) {
-      console.log('[CACHE] fresh localStorage hit — Supabase 재조회 생략');
-      return;
-    }
+    // 2) Supabase 보강 — 캐시 신선 여부와 무관하게 항상 실행.
+    // (라이브 relay 선박은 vessel_type='Other'로만 들어오므로, 서버가 누적한 선종/국적을
+    //  Supabase에서 끌어와 지도 색상(선종)을 채운다. 과거엔 캐시 신선 시 생략돼 거의 회색이었음.)
+    await enrichFromSupabase();
+  }, [mapRef, setShipCount]);
 
-    // 2) Supabase에서 최신 데이터 로드 (캐시 없음/만료 시에만)
+  // Supabase ships 테이블의 정적 데이터(선종·국적·선명·목적지)를 라이브 지도에 병합.
+  // 주기적으로도 호출돼 서버가 선종을 더 받을수록 지도가 점점 색칠된다.
+  const enrichFromSupabase = useCallback(async () => {
+    // updated_at 최신순 — 지금 송신 중인(=지도에 떠 있는) 선박과 최대한 겹치게 해 선종 매칭률↑
     const { data: ships } = await supabase
       .from('ships')
       .select('mmsi, ship_name, vessel_type, lat, lng, speed, heading, destination, flag_country, nav_status, eta')
       .not('lat', 'is', null)
-      .limit(5000);
+      .order('updated_at', { ascending: false })
+      .limit(6000);
 
     if (!ships?.length) return;
 
@@ -90,11 +93,11 @@ export function useAISStream(mapRef) {
       }
     });
 
-    trySetData();
-
-    // 3) localStorage 갱신 (다음 새로고침에서 즉시 사용)
+    // 지도 갱신 + localStorage 갱신
+    const source = mapRef.current?.getSource('ships');
+    const features = Array.from(shipMapRef.current.values());
+    if (source) { source.setData({ type: 'FeatureCollection', features }); setShipCount(features.length); }
     try {
-      const features = Array.from(shipMapRef.current.values());
       const now = Date.now();
       localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ ts: now, features }));
       lastSaveRef.current = now;
@@ -163,20 +166,49 @@ export function useAISStream(mapRef) {
             feature.properties.flag_country = existing.properties.flag_country ?? '';
           }
           bufferRef.current.push(feature);
-        } else if (msg.MessageType === 'ShipStaticData') {
-          const m = msg.Message.ShipStaticData;
+        } else if (msg.MessageType === 'ExtendedClassBPositionReport') {
+          // Class B 확장 위치 — 위치 + 선종(Type) 동시 제공 (소형선 색상 확보)
+          const m = msg.Message.ExtendedClassBPositionReport;
+          if (m?.Latitude != null && m?.Longitude != null) {
+            const mmsi = String(m.UserID);
+            const th = (m.TrueHeading != null && m.TrueHeading >= 0 && m.TrueHeading <= 359) ? m.TrueHeading : (m.Cog ?? 0);
+            const existing = shipMapRef.current.get(mmsi);
+            const type = m.Type ? mapAISTypeToCategory(m.Type) : (existing?.properties.vessel_type ?? 'Other');
+            shipMapRef.current.set(mmsi, {
+              type: 'Feature',
+              geometry: { type: 'Point', coordinates: [m.Longitude, m.Latitude] },
+              properties: {
+                mmsi,
+                ship_name: m.Name?.trim() || existing?.properties.ship_name || '',
+                vessel_type: type !== 'Other' ? type : (existing?.properties.vessel_type ?? 'Other'),
+                speed: m.Sog ?? 0,
+                heading: th,
+                destination: existing?.properties.destination ?? '',
+                flag_country: mmsiToFlag(mmsi) ?? '',
+                nav_status: null,
+                eta: null,
+              },
+            });
+          }
+        } else if (msg.MessageType === 'ShipStaticData' || msg.MessageType === 'StaticDataReport') {
+          const isClassB = msg.MessageType === 'StaticDataReport';
+          const m = isClassB ? msg.Message.StaticDataReport : msg.Message.ShipStaticData;
+          if (!m) return;
           const mmsi = String(m.UserID);
           const existing = shipMapRef.current.get(mmsi);
           if (existing) {
-            if (m.Name?.trim()) existing.properties.ship_name = m.Name.trim();
-            if (m.Destination?.trim()) existing.properties.destination = m.Destination.trim();
-            if (m.CallSign?.trim()) existing.properties.call_sign = m.CallSign.trim();
-            if (m.ImoNumber) existing.properties.imo = String(m.ImoNumber).replace(/\D/g, '').slice(0, 7);
-            if (m.MaximumStaticDraught) existing.properties.max_draught = m.MaximumStaticDraught;
-            if (m.Type) existing.properties.vessel_type = mapAISTypeToCategory(m.Type);
-            existing.properties.flag_country = mmsiToFlag(mmsi);
-            if (m.Destination?.trim()) existing.properties.destination = m.Destination.trim();
-            if (m.Eta) existing.properties.eta = m.Eta;
+            const name = isClassB ? m.ReportA?.Name : m.Name;
+            const typeCode = isClassB ? m.ReportB?.ShipType : m.Type;
+            if (name?.trim()) existing.properties.ship_name = name.trim();
+            if (typeCode) { const t = mapAISTypeToCategory(typeCode); if (t !== 'Other') existing.properties.vessel_type = t; }
+            existing.properties.flag_country = mmsiToFlag(mmsi) ?? existing.properties.flag_country ?? '';
+            if (!isClassB) {
+              if (m.Destination?.trim()) existing.properties.destination = m.Destination.trim();
+              if (m.CallSign?.trim()) existing.properties.call_sign = m.CallSign.trim();
+              if (m.ImoNumber) existing.properties.imo = String(m.ImoNumber).replace(/\D/g, '').slice(0, 7);
+              if (m.MaximumStaticDraught) existing.properties.max_draught = m.MaximumStaticDraught;
+              if (m.Eta) existing.properties.eta = m.Eta;
+            }
           }
         }
       } catch {
@@ -197,10 +229,13 @@ export function useAISStream(mapRef) {
     loadCache();
     connect();
     intervalRef.current = setInterval(flushBuffer, BUFFER_INTERVAL_MS);
+    // 3분마다 Supabase에서 선종·국적 보강 → 지도 색상이 시간이 지날수록 채워짐
+    const enrichTimer = setInterval(() => { enrichFromSupabase(); }, 3 * 60 * 1000);
 
     return () => {
       wsRef.current?.close();
       clearInterval(intervalRef.current);
+      clearInterval(enrichTimer);
     };
-  }, [connect, flushBuffer, loadCache]);
+  }, [connect, flushBuffer, loadCache, enrichFromSupabase]);
 }
