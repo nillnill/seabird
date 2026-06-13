@@ -54,7 +54,9 @@ const PORTS = {
   XINGANG:{c:'CN',n:'톈진'}, GUANGZHOU:{c:'CN',n:'광저우'}, CNGGZ:{c:'CN',n:'광저우'}, NANSHA:{c:'CN',n:'광저우'},
   XIAMEN:{c:'CN',n:'샤먼'}, CNXMN:{c:'CN',n:'샤먼'}, DALIAN:{c:'CN',n:'다롄'}, CNDLC:{c:'CN',n:'다롄'},
   // 대만·홍콩·동남아
-  KAOHSIUNG:{c:'TW',n:'가오슝'}, TWKHH:{c:'TW',n:'가오슝'}, KEELUNG:{c:'TW',n:'지룽'}, HONGKONG:{c:'HK',n:'홍콩'},
+  KAOHSIUNG:{c:'TW',n:'가오슝'}, TWKHH:{c:'TW',n:'가오슝'}, KEELUNG:{c:'TW',n:'지룽'}, TWKEL:{c:'TW',n:'지룽'},
+  TAIPEI:{c:'TW',n:'타이페이'}, TWTPE:{c:'TW',n:'타이페이'}, TAICHUNG:{c:'TW',n:'타이중'}, TWTXG:{c:'TW',n:'타이중'},
+  TAOYUAN:{c:'TW',n:'타오위안'}, TWKHH2:{c:'TW',n:'가오슝'}, HONGKONG:{c:'HK',n:'홍콩'},
   HKHKG:{c:'HK',n:'홍콩'}, SINGAPORE:{c:'SG',n:'싱가포르'}, SGSIN:{c:'SG',n:'싱가포르'}, JURONG:{c:'SG',n:'싱가포르'},
   PORTKLANG:{c:'MY',n:'포트클랑'}, MYPKG:{c:'MY',n:'포트클랑'}, KLANG:{c:'MY',n:'포트클랑'}, TANJUNGPELEPAS:{c:'MY',n:'탄중펠레파스'},
   MYTPP:{c:'MY',n:'탄중펠레파스'}, PASIRGUDANG:{c:'MY',n:'파시르구당'}, JAKARTA:{c:'ID',n:'자카르타'}, IDJKT:{c:'ID',n:'자카르타'},
@@ -195,7 +197,10 @@ function blank(raw, category) {
   return { raw, country: null, countryKo: null, port: null, category };
 }
 
-export function normalizeDestination(raw) {
+// locodeName: 선택적 { CODE: 'English City' } 맵(예: 17k UN/LOCODE). PORTS(한국어)에 없는
+// LOCODE를 영문 도시명으로 보강. 서버(국가만 필요)는 생략, 브라우저는 LOCODE_MAP 전달.
+export function normalizeDestination(raw, locodeName) {
+  const cityOf = (code) => (locodeName && locodeName[code]) ? titleCase(locodeName[code]) : null;
   if (!raw || typeof raw !== 'string') return blank(raw, 'none');
   let s = raw.toUpperCase().trim();
   // 경로형 "A>B", "A=>B", "A NAAR B"(네덜란드어 to): 최종 목적지(마지막 구간)만 취함
@@ -219,18 +224,19 @@ export function normalizeDestination(raw) {
     return { raw, country: ISO2[iso2].iso3, countryKo: ISO2[iso2].ko, port: null, category: 'port' };
   }
 
-  // 3) LOCODE 5자 (국가 추출)
+  // 3) LOCODE 5자 (국가 추출 + 도시명은 locodeName 폴백)
   if (!hit && /^[A-Z]{2}[A-Z0-9]{3}$/.test(compact)) {
     const iso2 = compact.slice(0, 2);
-    if (ISO2[iso2]) return { raw, country: ISO2[iso2].iso3, countryKo: ISO2[iso2].ko, port: null, category: 'port' };
+    if (ISO2[iso2]) return { raw, country: ISO2[iso2].iso3, countryKo: ISO2[iso2].ko, port: cityOf(compact), category: 'port' };
   }
 
-  // 4) 국가+약어 ("NL RTM") → 합쳐서 사전, 아니면 국가만
+  // 4) 국가+약어 ("NL RTM", "TW KHH") → 합쳐서 사전, 아니면 LOCODE 도시명/국가만
   if (!hit) {
     const tok = clean.split(/[ \-/]+/);
     if (tok[0]?.length === 2 && ISO2[tok[0]]) {
-      hit = PORTS[tok.join('')];
-      if (!hit) return { raw, country: ISO2[tok[0]].iso3, countryKo: ISO2[tok[0]].ko, port: null, category: 'port' };
+      const joined = tok.join('');
+      hit = PORTS[joined];
+      if (!hit) return { raw, country: ISO2[tok[0]].iso3, countryKo: ISO2[tok[0]].ko, port: cityOf(joined), category: 'port' };
     }
   }
 

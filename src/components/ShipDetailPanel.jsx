@@ -3,6 +3,7 @@ import useStore from '../store/useStore.js';
 import { runCargoEstimator } from '../agents/cargoEstimator.js';
 import { SHIP_CHARACTERS } from '../data/shipCharacters.js';
 import { LOCODE_MAP } from '../data/locodeMap.js';
+import { normalizeDestination } from '../utils/destinationNormalizer.js';
 import { supabase } from '../utils/supabaseClient.js';
 
 const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
@@ -394,7 +395,10 @@ export default function ShipDetailPanel() {
   const navState = deriveNavStatus(ship);
   const etaStr = formatEta(ship.eta);
   const lastSeen = timeAgo(ship.updated_at);
-  const destNorm = formatDestination(ship.destination);
+  // 목적지 정규화 (17k LOCODE 맵으로 도시명 보강) — 짧은형(내레이션/활동) + 긴형(InfoRow: "대만 / 가오슝")
+  const destInfo = normalizeDestination(ship.destination, LOCODE_MAP);
+  const destNorm = destInfo.port || destInfo.countryKo || null;
+  const destFull = destInfo.port && destInfo.countryKo ? `${destInfo.countryKo} / ${destInfo.port}` : destNorm;
   const flagEmoji = toFlagEmoji(ship.flag_country);
   const _sp = ship.speed;
   const _hasDest = destNorm && destNorm !== '-';
@@ -405,7 +409,7 @@ export default function ShipDetailPanel() {
     : (_hasDest ? `목적지: ${destNorm}` : '추가 정보 수신 대기 중');
   const vesselTypeKo = VESSEL_TYPE_KO[ship.vessel_type] ?? ship.vessel_type;
   const narration = buildNarration(ship, navState, destNorm, vesselTypeKo);
-  const character = SHIP_CHARACTERS[selectedShip.vessel_type] ?? SHIP_CHARACTERS['Other'];
+  const character = SHIP_CHARACTERS[ship.vessel_type] ?? SHIP_CHARACTERS['Other'];
 
   return (
     <div className="absolute top-3 left-3 bottom-3 z-40 w-[26rem] max-w-[calc(100%-1.5rem)] flex flex-col pointer-events-none">
@@ -589,7 +593,7 @@ export default function ShipDetailPanel() {
                     );
                   })()}
                 </div>
-                <InfoRow label="목적지" value={destNorm} />
+                <InfoRow label="목적지" value={destFull} />
                 <InfoRow label="도착 예정" value={etaStr} />
                 <InfoRow label="흘수" value={ship.draught != null ? `${ship.draught} m` : null} />
                 <InfoRow label="DWT" value={ship.dwt != null ? `${Number(ship.dwt).toLocaleString()} t` : null} />
