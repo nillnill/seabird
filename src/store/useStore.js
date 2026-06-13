@@ -35,9 +35,11 @@ const useStore = create((set) => ({
     timeRange: '24h',
   },
   addReport: (report) =>
-    set((state) => ({
-      reports: [report, ...state.reports].slice(0, 100),
-    })),
+    set((state) => {
+      // id 중복 무시 (초기 로드 + Realtime + StrictMode 이중 마운트로 같은 보고가 중복 추가되는 것 방지)
+      if (report?.id && state.reports.some((r) => r.id === report.id)) return state;
+      return { reports: [report, ...state.reports].slice(0, 100) };
+    }),
   setFeedFilter: (key, value) =>
     set((state) => ({
       feedFilters: { ...state.feedFilters, [key]: value },

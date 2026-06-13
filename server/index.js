@@ -487,7 +487,8 @@ Minimum viable: Even with only MMSI, infer flag country → typical exports → 
         current_month: currentMonth + 1,
       }),
       maxTokens: 2000,
-      model: 'claude-sonnet-4-6',
+      // 응답 지연(~24s) 완화를 위해 Haiku로 다운그레이드. CARGO_MODEL 환경변수로 오버라이드 가능(예: Sonnet 복귀)
+      model: process.env.CARGO_MODEL || 'claude-haiku-4-5',
     });
 
     // 캐시 저장 (백그라운드 — 응답 지연 없음)

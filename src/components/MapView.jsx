@@ -35,6 +35,7 @@ export default function MapView() {
   const weatherMarkersRef = useRef(null);
   const { setSelectedShip, selectedShip, selectedRegion, mapCenter, mapZoom, mapFilters, shipTrack } = useStore();
   const [activeStyle, setActiveStyle] = useState('dark');
+  const [mapError, setMapError] = useState(false);
 
   useAISStream(mapRef);
 
@@ -141,15 +142,24 @@ export default function MapView() {
   }
 
   useEffect(() => {
-    const map = new mapboxgl.Map({
-      container: mapContainerRef.current,
-      style: MAP_STYLES[0].url,
-      center: [127.0, 35.0],
-      zoom: 4,
-      antialias: true,
-    });
+    // WebGL 미지원·Mapbox 초기화 실패 시 앱 전체가 크래시하지 않도록 방어 (에러 바운더리 부재)
+    let map;
+    try {
+      map = new mapboxgl.Map({
+        container: mapContainerRef.current,
+        style: MAP_STYLES[0].url,
+        center: [127.0, 35.0],
+        zoom: 4,
+        antialias: true,
+      });
+    } catch (e) {
+      console.error('[MapView] 지도 초기화 실패 (WebGL 미지원 가능):', e?.message);
+      setMapError(true);
+      return;
+    }
 
     mapRef.current = map;
+    map.on('error', () => {}); // 타일 로드 등 비치명적 에러는 무시 (콘솔 스팸 방지)
     map.on('load', () => setupShipsLayer(map));
     map.addControl(new mapboxgl.NavigationControl(), 'bottom-right');
 
@@ -258,6 +268,13 @@ export default function MapView() {
         className="w-full h-full"
         style={{ background: '#0A0E1A' }}
       />
+      {mapError && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-center px-6 pointer-events-none">
+          <span className="text-3xl">🛰️</span>
+          <p className="text-sm text-white/70">지도를 표시할 수 없습니다</p>
+          <p className="text-[11px] text-white/40">브라우저에서 WebGL이 비활성화되어 있거나 지원되지 않습니다.<br/>하드웨어 가속을 켜거나 최신 브라우저에서 다시 시도해 주세요.</p>
+        </div>
+      )}
       {/* 맵 스타일 토글 — 선박 선택 시 좌측 카드에 가리지 않게 오른쪽으로 이동 */}
       <div className={`absolute top-3 flex gap-1 z-10 transition-all duration-300 ${(selectedShip || selectedRegion) ? 'left-[27.5rem]' : 'left-3'}`}>
         {MAP_STYLES.map(s => (

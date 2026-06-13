@@ -127,7 +127,7 @@ Node.js 서버 (server/index.js)
     → WEATHER_AGENT 보고는 raw_data.points → setWeatherMarkers() → 지도 이모지 마커
 
 CARGO ESTIMATOR (선박 클릭)
-브라우저 → POST /api/cargo-estimate → 서버 → Claude Sonnet → JSON 응답
+브라우저 → POST /api/cargo-estimate → 서버 → Claude Haiku(기본, CARGO_MODEL로 오버라이드) → JSON 응답
 (선박 종류별 전용 프롬프트: 탱커/LNG/벌크/어선/여객/특수선/컨테이너)
 
 REGION INTEL (항만·초크포인트 클릭 → RegionIntelPanel)
@@ -182,7 +182,7 @@ Node.js 서버 (포트 3001)
 | MASTER AGENT | `server/agents/masterAgent.js` | claude-sonnet-4-6 | 10분 폴링 | 전체 종합, 긴급 시 에이전트 재실행 |
 | WEATHER AGENT | `server/agents/weatherAgent.js` | claude-haiku-4-5 | 30분 폴링 | Open-Meteo로 13개 해역 날씨 수집 → 이모지·심각도 마커 + 악천후 보고. 항상 보고 |
 | COMMODITY ANALYST | `server/agents/commodityAnalyst.js` | claude-haiku-4-5 | 60분 폴링 | Perplexity로 원자재·운임 가격 검색 → 구조화 data_points + 한국어 시황 |
-| CARGO ESTIMATOR | `src/agents/cargoEstimator.js` | claude-sonnet-4-6 | 선박 클릭 | 선박 종류별 전용 프롬프트, vessel_type 변경 시 자동 재실행 |
+| CARGO ESTIMATOR | `src/agents/cargoEstimator.js` | claude-haiku-4-5 (기본, `CARGO_MODEL` 환경변수로 오버라이드) | 선박 클릭 | 선박 종류별 전용 프롬프트, vessel_type 변경 시 자동 재실행. 응답 ~24s(Sonnet)→~13s(Haiku) |
 
 ### 에이전트 시작 지연 (server/index.js)
 서버 시작 3초 후 500ms 간격 stagger:
@@ -364,6 +364,8 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 13. **초크포인트 "통과 선박"은 통항량이 아니라 스냅샷**: `/api/chokepoint-stats`·`chokepointWatcher`의 카운트는 "해당 bbox 안에 최근 1h 내 위치가 잡힌 선박 수"(순간 스냅샷)이지, 1시간 동안 통과한 누적 통항량이 아니다. 그래서 bbox 크기·AIS 커버리지에 따라 절대값이 크게 다르다(말라카 큰 박스 = 수백, 호르무즈 무수신 ≈ 0).
 14. **평년(baseline) 산출 정책 — `agents/baselineUtils.js` `resolveBaseline(db, locationId, metric, hardcoded)`**: 항만·초크포인트 공용 헬퍼. `baselines`의 해당 metric 이력에서 **0 스냅샷(수집 공백)을 제외**한 실측 표본이 **48개 이상 + 24h 이상 분포**할 때만 그 평균을 동적 평년으로 쓰고, 그 전엔 하드코딩 기준값(초크포인트: 수에즈 58·말라카 247 등 / 항만: 부산 12·싱가포르 45 등)을 쓴다. **4곳이 동일 정책 공유** — `/api/chokepoint-stats`·`chokepointWatcher`(metric=`daily_throughput`), `/api/port-stats`·`portAnalyst`(metric=`waiting_ships`). (과거: 동적 `avg_90d`가 마이그레이션 이전 0들로 오염돼 평년이 0.1~16.5로 나오고, 항만은 패널=하드코딩/에이전트=오염 avg_90d로 따로 놀던 버그를 이 정책으로 통일·차단. `baselinesWriter`의 `avg_90d` 컬럼은 이제 소비되지 않고 이력 기록용.)
 15. **에이전트 Claude JSON 견고성 — `agents/claudeClient.js`**: `callClaude`가 응답 JSON을 추출할 때 객체(`{}`)·배열(`[]`) 모두 지원, 코드펜스·후행콤마 제거, 파싱 실패 시 누락 콤마(`}{`→`},{`) 보정, 그래도 실패하면 **1회 재시도**(429/5xx·네트워크·파싱 실패). 또한 `max_tokens`가 작으면 큰 마크다운(예: PORT_ANALYST 30개 항만 표, MASTER 5섹션)이 잘려 "Unterminated JSON"이 나므로 충분히 잡음 — portAnalyst 4000, chokepointWatcher 6000, masterAgent 3000. 과거엔 배열 미지원+토큰 부족으로 PORT/CHOKEPOINT 보고가 주기적으로 유실됐다.
+16. **보고 카드 중복 key 방지 — `useStore.addReport`**: 초기 로드(50건) + Realtime 구독 + React StrictMode 이중 마운트로 같은 `agent_reports` 행이 중복 추가돼 React "duplicate key" 경고가 대량 발생했음 → `addReport`가 동일 `id` 존재 시 무시. (브라우저 콘솔 점검은 헤드리스 Chrome+CDP로 가능: 단 WebGL이 없으면 Mapbox가 죽으므로 `--enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader`로 SW 렌더 활성화 필요.)
+17. **WebGL 미지원 폴백 — `MapView.jsx`**: 에러 바운더리가 없어, WebGL 비활성 브라우저에서 Mapbox 초기화 실패 시 앱 전체가 흰 화면이 됐음 → `new mapboxgl.Map`을 try/catch로 감싸 실패 시 안내 오버레이 표시(`mapError`). `map.on('error')`로 비치명적 타일 에러 콘솔 스팸도 억제.
 
 ---
 
