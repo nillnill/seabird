@@ -10,15 +10,20 @@ const DEDUP_WINDOWS = {
   INFO:    15 * 60 * 1000,
 };
 
+// waiting_ships(반경 내 ≤2kn 선박 수) 평년 기준값.
+// 2026-06 baselines 실측(0 스냅샷 제외) 중앙값으로 재보정 — 과거 값은 집계 방식(수백 척)보다
+// 10~25배 낮아 패널·편차 보드가 +1000% 이상으로 과장됐다. ※ 동적 평년(resolveBaselineStats,
+// n≥48·24h)이 쌓이면 이 값은 폴백으로만 쓰임. 미측정 항만은 AIS 커버리지 공백으로 ≤2kn 선박이
+// 거의 안 잡혀(편차 보드 미노출), 규모 기반 보수적 추정치를 둔다.
 const HARDCODED_BASELINE = {
-  busan: 12, incheon: 8, gwangyang: 5, singapore: 45,
-  shanghai: 80, rotterdam: 35, la_lb: 40, dubai: 20,
-  yokohama: 18, kobe: 12, ningbo: 35, shenzhen: 28,
-  hongkong: 45, vladivostok: 8, portklang: 22, mumbai: 20,
-  hamburg: 25, newyork: 30, guangzhou: 60, qingdao: 55,
-  tianjin: 50, antwerp: 30, tanjung_pelepas: 25, xiamen: 28,
-  kaohsiung: 22, laem_chabang: 18, jakarta: 20, colombo: 15,
-  savannah: 12, hochiminhcity: 18,
+  // ── 실측 중앙값 (관측 표본 충분) ──
+  rotterdam: 880, antwerp: 410, singapore: 385, hamburg: 315, busan: 250,
+  tanjung_pelepas: 175, jakarta: 170, hongkong: 125, la_lb: 120, shenzhen: 95,
+  newyork: 85, incheon: 85, guangzhou: 46, savannah: 33, yokohama: 30,
+  // ── 미측정(커버리지 공백) — 규모 기반 추정 ──
+  shanghai: 150, ningbo: 90, portklang: 90, qingdao: 70, tianjin: 60,
+  kaohsiung: 50, dubai: 40, mumbai: 40, xiamen: 40, laem_chabang: 35,
+  hochiminhcity: 35, colombo: 30, gwangyang: 20, kobe: 15, vladivostok: 12,
 };
 
 const PORTS = [

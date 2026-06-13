@@ -7,19 +7,24 @@ const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
 const { startPortAnalyst, runPortAnalyst, PORTS, HARDCODED_BASELINE: PORT_BASELINE } = require('./agents/portAnalyst');
 const { startChokepointWatcher, runChokepointWatcher, CHOKEPOINTS, HARDCODED_BASELINE: CP_BASELINE } = require('./agents/chokepointWatcher');
-const { resolveBaseline } = require('./agents/baselineUtils');
+const { resolveBaseline, resolveBaselineStats } = require('./agents/baselineUtils');
 const { normalizeDestination } = require('./data/destinationNormalizer');
+const { mmsiToFlag } = require('./data/flag');
+const { aggregatePort, aggregateChokepoint } = require('./agents/trafficAggregator');
 const { startBaselinesWriter } = require('./agents/baselinesWriter');
 const { startGeopoliticalLinker, runGeopoliticalLinker } = require('./agents/geopoliticalLinker');
 const { startWeatherAgent } = require('./agents/weatherAgent');
 const { startCommodityAnalyst } = require('./agents/commodityAnalyst');
+const { startFlowReporter } = require('./agents/flowReporter');
 const { callClaude } = require('./agents/claudeClient');
 const { TRADE_PAIRS, SEASONAL_INDEX, getSeasonalCategory } = require('./data/tradePairs');
 
 const PORT = process.env.PORT ?? 3001;
 const SUPABASE_BATCH_INTERVAL_MS = 30 * 1000;
 const POSITIONS_FLUSH_INTERVAL_MS = 10 * 1000;  // ship_positions: 10초마다 배치 INSERT
-const TTL_CLEANUP_INTERVAL_MS = 60 * 60 * 1000; // 1시간마다 오래된 positions 삭제
+const POSITION_STORE_MIN_INTERVAL_MS = 60 * 1000; // 같은 mmsi 위치 이력은 최대 60초당 1건만 저장(쓰기량·테이블 폭증 억제)
+const POSITIONS_TTL_MS = 2 * 3600000;           // ship_positions 보존 2시간(항적 충분), 초과분 삭제
+const TTL_CLEANUP_INTERVAL_MS = 20 * 60 * 1000; // 20분마다 오래된 positions 삭제(작은 배치로 vacuum 부담↓)
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -52,6 +57,7 @@ function broadcast(data) {
 const shipState = new Map();      // mmsi → { ...모든 컬럼 }
 const dirtyMmsi = new Set();      // 마지막 flush 이후 변경된 mmsi
 const positionInsertBuf = [];     // { mmsi, lat, lng, speed, recorded_at }[]
+const lastPositionStoredAt = new Map(); // mmsi → 마지막 이력 저장 시각(throttle용)
 
 // upsert 시 모든 행이 동일 컬럼 집합을 갖도록 정규화 (이질 배치의 NULL 덮어쓰기 방지)
 const SHIP_COLS = ['mmsi','lat','lng','speed','heading','course','nav_status','ship_name',
@@ -83,45 +89,7 @@ function mapAISTypeToCategory(typeCode) {
   return 'Other';
 }
 
-// ITU MID(MMSI 앞 3자리) → ISO3 국가코드. 전 세계 표준 테이블(주요 해운·기국 포괄).
-const MID_TO_FLAG = {
-  201:'ALB',202:'AND',203:'AUT',204:'PRT',205:'BEL',206:'BLR',207:'BGR',208:'VAT',209:'CYP',210:'CYP',
-  211:'DEU',212:'CYP',213:'GEO',214:'MDA',215:'MLT',216:'ARM',218:'DEU',219:'DNK',220:'DNK',224:'ESP',
-  225:'ESP',226:'FRA',227:'FRA',228:'FRA',230:'FIN',231:'FRO',232:'GBR',233:'GBR',234:'GBR',235:'GBR',
-  236:'GIB',237:'GRC',238:'HRV',239:'GRC',240:'GRC',241:'GRC',242:'MAR',243:'HUN',244:'NLD',245:'NLD',
-  246:'NLD',247:'ITA',248:'MLT',249:'MLT',250:'IRL',251:'ISL',252:'LIE',253:'LUX',254:'MCO',255:'PRT',
-  256:'MLT',257:'NOR',258:'NOR',259:'NOR',261:'POL',262:'MNE',263:'PRT',264:'ROU',265:'SWE',266:'SWE',
-  267:'SVK',268:'SMR',269:'CHE',270:'CZE',271:'TUR',272:'UKR',273:'RUS',274:'MKD',275:'LVA',276:'EST',
-  277:'LTU',278:'SVN',279:'SRB',
-  301:'AIA',303:'USA',304:'ATG',305:'ATG',306:'CUW',307:'ABW',308:'BHS',309:'BHS',310:'BMU',311:'BHS',
-  312:'BLZ',314:'BRB',316:'CAN',319:'CYM',321:'CRI',323:'CUB',325:'DMA',327:'DOM',329:'GLP',330:'GRD',
-  331:'GRL',332:'GTM',334:'HND',336:'HTI',338:'USA',339:'JAM',341:'KNA',343:'LCA',345:'MEX',347:'MTQ',
-  348:'MSR',350:'NIC',351:'PAN',352:'PAN',353:'PAN',354:'PAN',355:'PAN',356:'PAN',357:'PAN',358:'PRI',
-  359:'SLV',361:'SPM',362:'TTO',364:'TCA',366:'USA',367:'USA',368:'USA',369:'USA',370:'PAN',371:'PAN',
-  372:'PAN',373:'PAN',374:'PAN',375:'VCT',376:'VCT',377:'VCT',378:'VGB',379:'VIR',
-  401:'AFG',403:'SAU',405:'BGD',408:'BHR',410:'BTN',412:'CHN',413:'CHN',414:'CHN',416:'TWN',417:'LKA',
-  419:'IND',422:'IRN',423:'AZE',425:'IRQ',428:'ISR',431:'JPN',432:'JPN',434:'TKM',436:'KAZ',437:'UZB',
-  438:'JOR',440:'KOR',441:'KOR',443:'PSE',445:'PRK',447:'KWT',450:'LBN',451:'KGZ',453:'MAC',455:'MDV',
-  457:'MNG',459:'NPL',461:'OMN',463:'PAK',466:'QAT',468:'SYR',470:'ARE',471:'ARE',472:'TJK',473:'YEM',
-  475:'YEM',477:'HKG',478:'BIH',
-  501:'FRA',503:'AUS',506:'MMR',508:'BRN',510:'FSM',511:'PLW',512:'NZL',514:'KHM',515:'KHM',516:'CXR',
-  518:'COK',520:'FJI',523:'CCK',525:'IDN',529:'KIR',531:'LAO',533:'MYS',536:'MNP',538:'MHL',540:'NCL',
-  542:'NIU',544:'NRU',546:'PYF',548:'PHL',553:'PNG',555:'PCN',557:'SLB',559:'ASM',561:'WSM',563:'SGP',
-  564:'SGP',565:'SGP',566:'SGP',567:'THA',570:'TON',572:'TUV',574:'VNM',576:'VUT',577:'VUT',578:'WLF',
-  601:'ZAF',603:'AGO',605:'DZA',607:'ATF',608:'SHN',609:'BDI',610:'CMR',611:'COD',612:'CAF',613:'COG',
-  615:'COG',616:'COM',617:'CPV',618:'ATF',619:'CIV',620:'COM',621:'DJI',622:'EGY',624:'ETH',625:'ERI',
-  626:'GAB',627:'GHA',629:'GMB',630:'GNB',631:'GNQ',632:'GIN',633:'BFA',634:'KEN',635:'ATF',636:'LBR',
-  637:'LBR',638:'SSD',642:'LBY',644:'LSO',645:'MUS',647:'MDG',649:'MLI',650:'MOZ',654:'MRT',655:'MWI',
-  656:'NER',657:'NGA',659:'NAM',660:'REU',661:'RWA',662:'SDN',663:'SEN',664:'SYC',665:'SHN',666:'SOM',
-  667:'SLE',668:'STP',669:'SWZ',670:'TCD',671:'TGO',672:'TUN',674:'TZA',675:'UGA',676:'COD',677:'TZA',
-  678:'ZMB',679:'ZWE',
-  701:'ARG',710:'BRA',720:'BOL',725:'CHL',730:'COL',735:'ECU',740:'FLK',745:'GUF',750:'GUY',755:'PRY',
-  760:'PER',765:'SUR',770:'URY',775:'VEN',
-};
-function mmsiToFlag(mmsi) {
-  if (!mmsi) return null;
-  return MID_TO_FLAG[parseInt(String(mmsi).substring(0, 3))] ?? null;
-}
+// MID_TO_FLAG·mmsiToFlag는 server/data/flag.js 단일 소스에서 import (아래 require).
 
 function parsePositionReport(msg) {
   const m = msg.Message.PositionReport;
@@ -247,7 +215,7 @@ setInterval(() => {
   let removed = 0;
   for (const [mmsi, r] of shipState) {
     const t = r.updated_at ? Date.parse(r.updated_at) : 0;
-    if (t < cutoff) { shipState.delete(mmsi); dirtyMmsi.delete(mmsi); removed++; }
+    if (t < cutoff) { shipState.delete(mmsi); dirtyMmsi.delete(mmsi); lastPositionStoredAt.delete(mmsi); removed++; }
   }
   if (removed) console.log(`[SHIP_STATE] evicted ${removed} stale (state size=${shipState.size})`);
 }, 10 * 60 * 1000);
@@ -261,9 +229,9 @@ setInterval(async () => {
   if (error) console.error('[SUPABASE] positions insert error:', error.message);
 }, POSITIONS_FLUSH_INTERVAL_MS);
 
-// ── TTL 정리 (1시간 주기, 6시간 초과분 삭제) ──────────────────────────────────
+// ── TTL 정리 (20분 주기, 2시간 초과분 삭제) ──────────────────────────────────
 setInterval(async () => {
-  const cutoff = new Date(Date.now() - 6 * 3600000).toISOString();
+  const cutoff = new Date(Date.now() - POSITIONS_TTL_MS).toISOString();
   const { error } = await supabase
     .from('ship_positions')
     .delete()
@@ -309,13 +277,18 @@ function connectAIS() {
           : parseExtendedClassBPosition(msg);
         if (parsed) {
           applyShipUpdate(parsed.mmsi, parsed);
-          positionInsertBuf.push({
-            mmsi: parsed.mmsi,
-            lat: parsed.lat,
-            lng: parsed.lng,
-            speed: parsed.speed,
-            recorded_at: parsed.updated_at,
-          });
+          // 같은 선박은 60초당 1건만 이력 저장 — 글로벌 firehose를 그대로 쌓던 폭증을 차단
+          const nowTs = Date.now();
+          if (nowTs - (lastPositionStoredAt.get(parsed.mmsi) ?? 0) >= POSITION_STORE_MIN_INTERVAL_MS) {
+            lastPositionStoredAt.set(parsed.mmsi, nowTs);
+            positionInsertBuf.push({
+              mmsi: parsed.mmsi,
+              lat: parsed.lat,
+              lng: parsed.lng,
+              speed: parsed.speed,
+              recorded_at: parsed.updated_at,
+            });
+          }
         }
       } else if (msg.MessageType === 'ShipStaticData') {
         const parsed = parseShipStaticData(msg);
@@ -357,6 +330,7 @@ setTimeout(() => startGeopoliticalLinker(), 4000);
 setTimeout(() => startBaselinesWriter(),   5000);
 setTimeout(() => startWeatherAgent(),      5500);
 setTimeout(() => startCommodityAnalyst(),  6000);
+setTimeout(() => startFlowReporter(),      6500);
 
 // ── HTTP 엔드포인트 ───────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', ships_tracked: shipState.size, dirty: dirtyMmsi.size }));
@@ -554,18 +528,7 @@ app.post('/api/orchestrate', async (req, res) => {
   }
 });
 
-function nmToDegServer(nm) { return nm / 60; }
-
-// 두 좌표 간 방위(도, 0=북). 선박 위치 → 항구 중심 방향 계산에 사용.
-function bearingDeg(lat1, lon1, lat2, lon2) {
-  const toRad = d => (d * Math.PI) / 180;
-  const φ1 = toRad(lat1), φ2 = toRad(lat2), Δλ = toRad(lon2 - lon1);
-  const y = Math.sin(Δλ) * Math.cos(φ2);
-  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
-  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
-}
-// 두 방위 사이 최소 각도차(0~180)
-function angleDiff(a, b) { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; }
+// 집계/방위/거리 헬퍼는 trafficAggregator.js로 이동(공유). port-stats·chokepoint-stats가 그 모듈을 사용.
 
 app.get('/api/port-stats', async (req, res) => {
   const { portId } = req.query;
@@ -573,63 +536,7 @@ app.get('/api/port-stats', async (req, res) => {
   if (!port) return res.status(404).json({ error: 'port not found' });
 
   try {
-    const deg = nmToDegServer(port.radius_nm);
-    const cutoff = new Date(Date.now() - 3600000).toISOString();
-
-    const { data: ships } = await supabase.from('ships')
-      .select('mmsi, vessel_type, flag_country, speed, course, heading, lat, lng, draught, destination')
-      .gte('lat', port.lat - deg).lte('lat', port.lat + deg)
-      .gte('lng', port.lng - deg).lte('lng', port.lng + deg)
-      .gte('updated_at', cutoff);
-
-    const vesselTypeDist = {};
-    const flagDist = {};
-    // 상태 세분화 (nav_status 미수신 → speed 기반). waiting=정박+대기(≤2kn)로 평년 게이지와 일치.
-    const status = { berthed: 0, waiting: 0, maneuvering: 0, transit: 0 };
-    // 입출항 추정 (heading/course 방위 기반, 항행 중 ≥3kn 선박만)
-    const traffic = { inbound: 0, outbound: 0, passing: 0, moving: 0 };
-    // 속력 히스토그램
-    const speedHist = { berth: 0, slow: 0, cruise: 0, fast: 0 };
-    // 목적지 국가 분포 (destination 자유텍스트 정규화)
-    const destCountryDist = {};
-    let destWithData = 0;
-    let draughtSum = 0, draughtN = 0;
-
-    (ships ?? []).forEach(s => {
-      const type = s.vessel_type || 'Other';
-      vesselTypeDist[type] = (vesselTypeDist[type] || 0) + 1;
-      // 저장된 flag가 없으면 mmsi MID로 즉시 계산 (기존 행도 커버)
-      const flag = s.flag_country || mmsiToFlag(s.mmsi);
-      if (flag) flagDist[flag] = (flagDist[flag] || 0) + 1;
-
-      const sp = s.speed ?? 0;
-      if (sp < 0.5) { status.berthed++; speedHist.berth++; }
-      else if (sp <= 2.0) { status.waiting++; speedHist.slow++; }
-      else if (sp < 5.0) { status.maneuvering++; speedHist.slow++; }
-      else { status.transit++; if (sp < 10) speedHist.cruise++; else speedHist.fast++; }
-
-      // 항행 중 선박의 진행방향(COG 우선, 없으면 heading) vs 항구 방위로 입/출항 판정
-      if (sp >= 3 && s.lat != null && s.lng != null) {
-        const cog = s.course ?? s.heading;
-        if (cog != null) {
-          traffic.moving++;
-          const toPort = bearingDeg(s.lat, s.lng, port.lat, port.lng);
-          const diff = angleDiff(cog, toPort);
-          if (diff < 70) traffic.inbound++;
-          else if (diff > 110) traffic.outbound++;
-          else traffic.passing++;
-        }
-      }
-
-      if (s.draught != null && s.draught > 0) { draughtSum += s.draught; draughtN++; }
-
-      if (s.destination) {
-        const nd = normalizeDestination(s.destination);
-        if (nd.countryKo) { destCountryDist[nd.countryKo] = (destCountryDist[nd.countryKo] || 0) + 1; destWithData++; }
-      }
-    });
-    const total = ships?.length ?? 0;
-    const waitingCount = status.berthed + status.waiting;
+    const agg = await aggregatePort(supabase, port);
 
     const { data: reports } = await supabase.from('agent_reports')
       .select('id, severity, title, summary, created_at')
@@ -642,41 +549,8 @@ app.get('/api/port-stats', async (req, res) => {
 
     res.json({
       port: { id: port.id, name: port.name, lat: port.lat, lng: port.lng },
-      total_ships: total,
-      waiting_ships: waitingCount,
       baseline_waiting: baselineWaiting,
-      status_breakdown: [
-        { key: 'berthed',     label: '정박·계류',  count: status.berthed },
-        { key: 'waiting',     label: '대기·정박지', count: status.waiting },
-        { key: 'maneuvering', label: '입출항 기동', count: status.maneuvering },
-        { key: 'transit',     label: '항행 중',     count: status.transit },
-      ],
-      traffic: {
-        inbound: traffic.inbound,
-        outbound: traffic.outbound,
-        passing: traffic.passing,
-        moving: traffic.moving,
-      },
-      speed_hist: [
-        { key: 'berth',  label: '정박(<0.5kn)',  count: speedHist.berth },
-        { key: 'slow',   label: '저속(0.5–5kn)', count: speedHist.slow },
-        { key: 'cruise', label: '항행(5–10kn)',  count: speedHist.cruise },
-        { key: 'fast',   label: '고속(>10kn)',   count: speedHist.fast },
-      ],
-      avg_draught: draughtN ? Math.round((draughtSum / draughtN) * 10) / 10 : null,
-      draught_samples: draughtN,
-      dest_country_dist: Object.entries(destCountryDist)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 8)
-        .map(([country, count]) => ({ country, count, pct: destWithData ? Math.round(count / destWithData * 100) : 0 })),
-      dest_samples: destWithData,
-      vessel_type_dist: Object.entries(vesselTypeDist)
-        .sort((a, b) => b[1] - a[1])
-        .map(([type, count]) => ({ type, count, pct: total ? Math.round(count / total * 100) : 0 })),
-      flag_dist: Object.entries(flagDist)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 8)
-        .map(([flag, count]) => ({ flag, count, pct: total ? Math.round(count / total * 100) : 0 })),
+      ...agg,
       recent_reports: reports ?? [],
     });
   } catch (err) {
@@ -691,34 +565,98 @@ app.get('/api/chokepoint-stats', async (req, res) => {
   if (!cp) return res.status(404).json({ error: 'chokepoint not found' });
 
   try {
-    const [[latMin, lngMin], [latMax, lngMax]] = cp.bbox;
-    const cutoff = new Date(Date.now() - 3600000).toISOString();
-
-    const { data: ships } = await supabase.from('ships')
-      .select('vessel_type, speed')
-      .gte('lat', latMin).lte('lat', latMax)
-      .gte('lng', lngMin).lte('lng', lngMax)
-      .gte('updated_at', cutoff);
-
-    const total = (ships ?? []).length;
+    const agg = await aggregateChokepoint(supabase, cp);
+    const total = agg.current_ships;
 
     // 평년: 충분한 실측 이력이 쌓이면 동적 평균, 그 전엔 하드코딩 기준값 (chokepointWatcher와 동일 정책)
     const baseline = await resolveBaseline(supabase, cpId, 'daily_throughput', CP_BASELINE?.[cpId] ?? 50);
     const change_pct = baseline > 0 ? Math.round(((total - baseline) / baseline) * 100) : 0;
 
-    const typeDist = {};
-    (ships ?? []).forEach(s => { const t = s.vessel_type || 'Other'; typeDist[t] = (typeDist[t] || 0) + 1; });
-
-    res.json({
-      current_ships: total,
-      baseline,
-      change_pct,
-      vessel_type_dist: Object.entries(typeDist)
-        .sort((a, b) => b[1] - a[1])
-        .map(([type, count]) => ({ type, count, pct: total ? Math.round(count / total * 100) : 0 })),
-    });
+    res.json({ ...agg, baseline, change_pct });
   } catch (err) {
     console.error('[CHOKEPOINT_STATS] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 지역·metric → location 목록·하드코딩 기준값·표시명 레지스트리 (비교 수치 시스템 공용)
+function metricRegistry(metric) {
+  if (metric === 'waiting_ships') {
+    return { locations: PORTS, hardcoded: PORT_BASELINE, label: (l) => l.name, higherIsBad: true };
+  }
+  // 기본: daily_throughput (초크포인트)
+  return { locations: CHOKEPOINTS, hardcoded: CP_BASELINE, label: (l) => l.name, higherIsBad: false };
+}
+
+// 마지막 3표본 기울기로 추세 판정
+function trendOf(samples) {
+  if (!samples || samples.length < 3) return 'flat';
+  const tail = samples.slice(-3).map(s => s.v);
+  const slope = tail[2] - tail[0];
+  const scale = Math.max(1, Math.abs(tail[0]));
+  if (slope / scale > 0.1) return 'rising';
+  if (slope / scale < -0.1) return 'falling';
+  return 'flat';
+}
+
+// 레이어 2 — 시계열 추이 + 평년 밴드 + 추세
+app.get('/api/baseline-history', async (req, res) => {
+  const { locationId, metric = 'daily_throughput', hours = '48' } = req.query;
+  if (!locationId) return res.status(400).json({ error: 'locationId required' });
+
+  try {
+    const { hardcoded } = metricRegistry(metric);
+    const windowMs = Math.min(Math.max(parseInt(hours, 10) || 48, 1), 90 * 24) * 3600000;
+    const stats = await resolveBaselineStats(supabase, locationId, metric, hardcoded?.[locationId], windowMs);
+
+    const latest = stats.latest;
+    const z = (stats.std && stats.std > 0 && latest)
+      ? Math.round(((latest.v - stats.mean) / stats.std) * 10) / 10
+      : null;
+
+    res.json({
+      location_id: locationId,
+      metric,
+      series: stats.samples.map(s => ({ t: new Date(s.t).toISOString(), v: s.v })),
+      baseline: stats.baseline,
+      mean: stats.mean,
+      std: stats.std,
+      n: stats.n,
+      has_dynamic: stats.hasDynamic,
+      latest,
+      z,
+      trend: trendOf(stats.samples),
+    });
+  } catch (err) {
+    console.error('[BASELINE_HISTORY] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 레이어 3 — 전 지역 평년 대비 편차 랭킹 보드
+app.get('/api/comparison-board', async (req, res) => {
+  const { metric = 'waiting_ships' } = req.query;
+  try {
+    const { locations, hardcoded, higherIsBad } = metricRegistry(metric);
+
+    const rows = await Promise.all(locations.map(async (loc) => {
+      const stats = await resolveBaselineStats(supabase, loc.id, metric, hardcoded?.[loc.id]);
+      if (!stats.latest) return null; // 최근 스냅샷 없으면 제외
+      const current = stats.latest.v;
+      const baseline = stats.baseline;
+      const pct = baseline > 0 ? Math.round(((current - baseline) / baseline) * 100) : 0;
+      const z = (stats.std && stats.std > 0)
+        ? Math.round(((current - stats.mean) / stats.std) * 10) / 10
+        : null;
+      return { id: loc.id, name: loc.name, current, baseline, pct, z, n: stats.n };
+    }));
+
+    const list = rows.filter(Boolean)
+      .sort((a, b) => Math.abs(b.pct) - Math.abs(a.pct)); // 편차 절대값 큰 순
+
+    res.json({ metric, higher_is_bad: higherIsBad, rows: list });
+  } catch (err) {
+    console.error('[COMPARISON_BOARD] error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

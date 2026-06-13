@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS ship_positions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ship_positions_mmsi_time ON ship_positions (mmsi, recorded_at DESC);
+-- TTL 정리(DELETE ... WHERE recorded_at < cutoff)가 풀스캔하지 않도록 recorded_at 단독 인덱스
+CREATE INDEX IF NOT EXISTS idx_ship_positions_recorded_at ON ship_positions (recorded_at);
 
 -- ── agent_reports: 에이전트 생성 보고 카드 ───────────────────────────────────
 CREATE TABLE IF NOT EXISTS agent_reports (
@@ -77,6 +79,26 @@ CREATE TABLE IF NOT EXISTS baselines (
 
 CREATE INDEX IF NOT EXISTS idx_baselines_location_metric ON baselines (location_id, metric);
 CREATE INDEX IF NOT EXISTS idx_baselines_snapshot_at     ON baselines (snapshot_at DESC);
+
+-- ── traffic_snapshots: 항만·초크포인트 분해 시계열 (입출항·선종·기국·목적지·원자재 유입 추정) ──
+-- baselinesWriter가 30분마다 적재. FLOW REPORTER가 이력에서 원자재 유입 추세 산출.
+CREATE TABLE IF NOT EXISTS traffic_snapshots (
+  id            BIGSERIAL PRIMARY KEY,
+  location_id   VARCHAR(30) NOT NULL,
+  location_type VARCHAR(12) NOT NULL,        -- 'port' | 'chokepoint'
+  total_ships   INT NOT NULL DEFAULT 0,
+  inbound       INT,
+  outbound      INT,
+  passing       INT,
+  vessel_type_dist  JSONB,                   -- [{type,count,pct}]
+  flag_dist         JSONB,                   -- [{flag,count,pct}]
+  dest_country_dist JSONB,                   -- [{country,count,pct}] (port)
+  inbound_by_type   JSONB,                   -- {Tanker:n, 'Bulk Carrier':n, ...} (port)
+  commodity_inflow  JSONB,                   -- {tanker_ships, est_liquid_dwt, est_dry_bulk_dwt, est_container_teu, ...} (port)
+  snapshot_at   TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_traffic_loc ON traffic_snapshots (location_id, snapshot_at DESC);
+CREATE INDEX IF NOT EXISTS idx_traffic_at  ON traffic_snapshots (snapshot_at DESC);
 
 -- ── anomaly_history: ANOMALY DETECTOR 이력 ──────────────────────────────────
 CREATE TABLE IF NOT EXISTS anomaly_history (
