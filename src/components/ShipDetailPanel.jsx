@@ -147,6 +147,37 @@ function deriveNavStatus(ship) {
   return { label: '운항 중', color: '#22C55E', inferred: true, icon: '🚢' };
 }
 
+// ETA까지 남은 시간(시간 단위). eta는 ISO 문자열 또는 {Month,Day,Hour,Minute} 객체.
+function hoursUntil(eta) {
+  if (!eta) return null;
+  let target;
+  if (typeof eta === 'object' && eta.Month) {
+    const now = new Date();
+    target = new Date(now.getFullYear(), eta.Month - 1, eta.Day, eta.Hour || 0, eta.Minute || 0);
+    if (target < now) target = new Date(now.getFullYear() + 1, eta.Month - 1, eta.Day, eta.Hour || 0, eta.Minute || 0);
+  } else {
+    target = new Date(eta);
+  }
+  if (isNaN(target.getTime())) return null;
+  return Math.round((target.getTime() - Date.now()) / 3600000);
+}
+
+// 선박 데이터로 캐릭터가 말하는 브리핑 문장 생성
+function buildNarration(ship, navState, destNorm, vesselTypeKo) {
+  const typeKo = vesselTypeKo || '선박';
+  const hasDest = destNorm && destNorm !== '-';
+  const parts = [];
+  parts.push(hasDest ? `${destNorm} 방면으로 향하는 ${typeKo}입니다.` : `${typeKo}입니다.`);
+  const sp = ship.speed;
+  if (sp != null) parts.push(`현재 속력은 ${sp}노트, ${navState.label} 상태입니다.`);
+  else parts.push(`${navState.label} 상태입니다.`);
+  const h = hoursUntil(ship.eta);
+  if (h != null && h >= 0 && h < 24 * 14) {
+    parts.push(h < 1 ? '곧 도착할 예정입니다.' : h < 48 ? `약 ${h}시간 뒤 도착 예정입니다.` : `약 ${Math.round(h / 24)}일 뒤 도착 예정입니다.`);
+  }
+  return parts.join(' ');
+}
+
 // 마지막 수신 시각 → "N분 전"
 function timeAgo(ts) {
   if (!ts) return null;
@@ -372,6 +403,8 @@ export default function ShipDetailPanel() {
     : _sp != null && _sp < 0.5 ? '정지 — 부두 접안 또는 정박 추정'
     : _sp != null ? '저속 기동 — 입출항·대기 추정'
     : (_hasDest ? `목적지: ${destNorm}` : '추가 정보 수신 대기 중');
+  const vesselTypeKo = VESSEL_TYPE_KO[ship.vessel_type] ?? ship.vessel_type;
+  const narration = buildNarration(ship, navState, destNorm, vesselTypeKo);
   const character = SHIP_CHARACTERS[selectedShip.vessel_type] ?? SHIP_CHARACTERS['Other'];
 
   return (
@@ -437,10 +470,10 @@ export default function ShipDetailPanel() {
               <p className="text-[12px] font-semibold text-white/85 leading-snug">
                 {character.title}
               </p>
-              {/* 명언 */}
+              {/* 캐릭터 브리핑 — 실시간 선박 데이터 기반 대사 */}
               <div className="mt-2 pl-3 border-l-2 border-white/20">
-                <p className="text-[11px] italic text-white/60 leading-relaxed">
-                  {character.quote}
+                <p className="text-[11px] text-white/75 leading-relaxed">
+                  <span className="text-white/40 mr-1">“</span>{narration}<span className="text-white/40 ml-0.5">”</span>
                 </p>
               </div>
               {/* 탑승 선박 — 하단 정렬 */}
