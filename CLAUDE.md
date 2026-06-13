@@ -1,6 +1,6 @@
 # Seabird — AI eyes on every ocean
 
-해양 실시간 인텔리전스 플랫폼. AIS 선박 데이터와 5개 AI 에이전트가 결합된 해커톤 프로젝트.
+해양 실시간 인텔리전스 플랫폼. AIS 선박 데이터와 8개 AI 에이전트가 결합된 해커톤 프로젝트.
 
 > **CLAUDE.md 관리 원칙**: 파일 추가·삭제·기능 변경이 있을 때마다 이 문서를 업데이트한다.
 
@@ -47,20 +47,24 @@ seabird/
 │   └── generate_character_excel.cjs  ← 캐릭터 엑셀 재생성 스크립트
 │
 ├── server/
-│   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작
+│   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/baseline-history + /api/comparison-board + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작
 │   ├── package.json
 │   ├── .env                   ← 서버 환경변수 (git 제외)
 │   ├── agents/
 │   │   ├── claudeClient.js    ← Node.js 전용 Claude API 래퍼
-│   │   ├── baselineUtils.js   ← 평년(baseline) 산출 공유 정책 resolveBaseline() — 항만·초크포인트 공용
+│   │   ├── baselineUtils.js   ← 평년(baseline) 산출 공유 정책 resolveBaseline()/resolveBaselineStats(mean·std·n·latest·series) — 항만·초크포인트 공용
+│   │   ├── trafficAggregator.js ← 항만·초크포인트 실시간 집계 공유 모듈 aggregatePort()/aggregateChokepoint() — 선종·기국·목적지·입출항(선종별)·원자재 유입 추정(estLadenTons). port-stats·chokepoint-stats·baselinesWriter 공용
 │   │   ├── portAnalyst.js     ← 10분 폴링, Haiku, 30개 항만 combined
 │   │   ├── chokepointWatcher.js ← 5분 폴링, Haiku, 7개 초크포인트 combined
 │   │   ├── geopoliticalLinker.js ← 15분 폴링, Sonnet, Perplexity 영문검색 → 한국어 번역
 │   │   ├── masterAgent.js     ← 10분 폴링, Sonnet, 전체 종합 보고
 │   │   ├── weatherAgent.js    ← 30분 폴링, Haiku, Open-Meteo 13개 해역 날씨 → 이모지 마커
-│   │   └── commodityAnalyst.js ← 60분 폴링, Haiku, Perplexity 원자재·운임 가격
+│   │   ├── commodityAnalyst.js ← 60분 폴링, Haiku, Perplexity 원자재·운임 가격
+│   │   ├── flowReporter.js    ← 6시간 폴링, Haiku, traffic_snapshots 이력 → 항만 원자재 유입 추세(DoD)
+│   │   └── baselinesWriter.js ← 30분 폴링, aggregator로 전 지역 1회 집계 → baselines(스칼라)+traffic_snapshots(분해) 동시 적재
 │   └── data/
 │       ├── tradePairs.js      ← 15개 교역 쌍 + 계절 인덱스 (CommonJS)
+│       ├── flag.js            ← MID_TO_FLAG(MMSI MID→ISO3)·mmsiToFlag 단일 소스 (index.js·trafficAggregator 공용)
 │       └── destinationNormalizer.js ← destination 정규화 (src/utils/ ESM에서 자동 생성된 CJS 미러)
 │
 └── src/
@@ -78,7 +82,8 @@ seabird/
     │   ├── PortMarker.jsx     ← 30개 항만 GL 레이어 (circle + symbol, hover 라벨)
     │   ├── ChokepointMarker.jsx ← 7개 초크포인트 HTML 마커 (severity pulse 애니메이션)
     │   ├── WeatherMarker.jsx  ← 날씨 이모지 마커 13개 해역 (WEATHER_AGENT raw_data.points 연동)
-    │   ├── RegionIntelPanel.jsx ← 지역 인텔 모달 (Civ7 스타일, 탭: 현황/[선박 동향(항만 전용)]/역사/뉴스, 캐릭터 이미지 지원). 현황=상태 세분화(정박/대기/기동/항행)+평년, 선박 동향=입출항 추정·선종·기국·속력 분포
+    │   ├── Sparkline.jsx      ← 경량 SVG 스파크라인 (baselines 시계열 추이 + 평년 기준선, Recharts 없이 인라인). RegionIntelPanel 현황 탭 추이 카드에 사용
+    │   ├── RegionIntelPanel.jsx ← 지역 인텔 모달 (Civ7 스타일, 탭: 현황/[선박 동향(항만 전용)]/역사/뉴스, 캐릭터 이미지 지원). 현황=상태 세분화(정박/대기/기동/항행)+평년 게이지+**최근 추이(24h 스파크라인·추세·z-score 배지, /api/baseline-history)**, 선박 동향=입출항 추정·**원자재 유입 추정(CommodityInflow: 원유·건화물·컨테이너·LNG)**·선종·기국·목적지 분포
     │   ├── CommandFeed.jsx    ← 오른쪽 패널 전체
     │   ├── CommanderInput.jsx ← 자연어 입력창
     │   ├── ReportCard.jsx     ← 에이전트 보고 카드 (MASTER_AGENT: 보라색)
@@ -86,7 +91,7 @@ seabird/
     │   ├── ShipDetailPanel.jsx ← 선박 클릭 상세 (좌측 떠 있는 카드, 캐릭터 헤더 + 3탭: 현황/화물추정/항적). 선택 시 Supabase ships 전체 행 보강(dbShip) → 지도 피처(Other)보다 우선해 **캐릭터·선종·색상 일관성** 확보. 현황 탭: 항행상태 배지(nav_status 우선, 없으면 속력 추정) + 데이터 기반 캐릭터 브리핑(buildNarration: 목적지+선종+속력+상태+ETA) + 목적지(normalizeDestination+17k LOCODE_MAP로 "대만 / 가오슝"식)·흘수·DWT·침로·갱신시각. 항적 탭 fetch가 setShipTrack → MapView 경로 시각화
     │   ├── FeedFilter.jsx     ← 에이전트별 필터 토글
     │   ├── StatusBar.jsx      ← 상단 상태 표시줄 (📊 통계 대시보드 토글 버튼)
-    │   └── StatsDashboard.jsx ← 통계 대시보드 모달 (Recharts, 8개 섹션)
+    │   └── StatsDashboard.jsx ← 통계 대시보드 모달 (Recharts, 10개 섹션 — 평년 대비 편차 보드 포함, /api/comparison-board)
     │
     ├── hooks/
     │   ├── useAISStream.js    ← ws://localhost:3001/relay 연결 + localStorage 즉시 복원(10분 TTL) + Supabase 선종/국적 보강(enrichFromSupabase: 로드 시 항상 + 3분 주기, updated_at 최신순) + Class B(19/24) 처리 → 지도 선종 색상. flushBuffer가 `shipOverrides`(선택 선박 dbShip 보강)를 매 500ms 적용 → 클릭 즉시 마커 색상 일치
@@ -135,6 +140,8 @@ REGION INTEL (항만·초크포인트 클릭 → RegionIntelPanel)
         → 서버가 ships 테이블(최근 1h updated_at)을 BoundingBox 집계 → 실시간 현황 vs 평년 게이지
         → port-stats는 한 번에 status_breakdown(상태 세분화)·traffic(입출항 추정)·speed_hist·avg_draught·dest_country_dist(목적지 국가, destination 정규화)까지 반환
           (현황 탭 + 선박 동향 탭이 같은 응답을 공유, 탭 전환 시 추가 요청 없음)
+브라우저 → (현황 탭 추이) GET /api/baseline-history?locationId={id}&metric={waiting_ships|daily_throughput}&hours=24
+        → 서버가 baselines 이력(0 스냅샷 제외)에서 series·평년·mean·std·z-score·추세(마지막 3표본 기울기) 반환 → Sparkline + z-score 배지
 ※ destination은 자유텍스트라 파편화 심함(LOCODE/항구명/작업명 혼재) → `destinationNormalizer.normalizeDestination`으로 국가·항구 분류. 코드류(LOCODE)·주요 항구·군소 지역항(NL/NO/DE 내륙항 등)·국가명 단어를 분류하고 나머지 긴 꼬리는 'unknown'(원문 표시). 국가 식별 ~56%(샘플 기준), 상위 빈도 목적지는 대부분 분류됨. ※ 5자 LOCODE 휴리스틱은 드물게 일반 단어를 오분류할 수 있어, COUNTRY_NAMES(국가명)를 먼저 검사.
 브라우저 → (뉴스 탭) GET /api/region-news?id={id}&type={type} → Perplexity 영문 검색 → Claude 한국어 번역
 ※ 실시간 현황이 전부 0이면 ships 테이블에 신선한 행이 없다는 뜻 — upsert 실패(아래 nav_status 이슈) 또는 AIS 커버리지 공백을 의심.
@@ -162,7 +169,7 @@ Node.js 서버 (포트 3001)
     │   수집 필드: mmsi, lat, lng, speed, heading, course, nav_status,
     │             ship_name, vessel_type, destination, eta, draught,
     │             call_sign, imo, flag_country
-    └─ 10초마다 → ship_positions INSERT
+    └─ ship_positions INSERT (10초 배치 flush, **같은 mmsi는 60초당 1건만** throttle) — 2h TTL, 20분마다 정리
 ```
 
 > **shipState 누적 캐시 (중요)**: 과거엔 30초 버퍼를 통째로 비우고 이질적 행을 한 배치로 upsert해, 위치-only 갱신이 PostgREST 컬럼 합집합 규칙으로 `vessel_type`/`ship_name`을 NULL로 덮어써 정적 데이터가 수일간 ~3%에 정체됐다. 지금은 mmsi별 **누적 상태를 메모리에 유지**하고, 변경분만 **모든 컬럼을 정규화(동일 키)** 해 upsert하므로 한 번 받은 선종·선명이 보존된다. `shipState`는 6시간 미수신 시 evict.
@@ -170,7 +177,7 @@ Node.js 서버 (포트 3001)
 
 ---
 
-## 7개 AI 에이전트
+## 8개 AI 에이전트
 
 에이전트는 **서버(server/agents/)** 에서 실행됨. 모델 티어화로 비용 최적화.
 
@@ -182,6 +189,7 @@ Node.js 서버 (포트 3001)
 | MASTER AGENT | `server/agents/masterAgent.js` | claude-sonnet-4-6 | 10분 폴링 | 전체 종합, 긴급 시 에이전트 재실행 |
 | WEATHER AGENT | `server/agents/weatherAgent.js` | claude-haiku-4-5 | 30분 폴링 | Open-Meteo로 13개 해역 날씨 수집 → 이모지·심각도 마커 + 악천후 보고. 항상 보고 |
 | COMMODITY ANALYST | `server/agents/commodityAnalyst.js` | claude-haiku-4-5 | 60분 폴링 | Perplexity로 원자재·운임 가격 검색 → 구조화 data_points + 한국어 시황 |
+| FLOW REPORTER | `server/agents/flowReporter.js` | claude-haiku-4-5 | 6시간 폴링 | `traffic_snapshots` 이력에서 항만 원자재 유입 '강도'(입항 추정 톤수) 24h vs 직전 24h 추세 산출 → Claude 서술. 이력 없으면 자동 skip |
 | CARGO ESTIMATOR | `src/agents/cargoEstimator.js` | claude-haiku-4-5 (기본, `CARGO_MODEL` 환경변수로 오버라이드) | 선박 클릭 | 선박 종류별 전용 프롬프트, vessel_type 변경 시 자동 재실행. 응답 ~24s(Sonnet)→~13s(Haiku) |
 
 ### 에이전트 시작 지연 (server/index.js)
@@ -192,6 +200,7 @@ Node.js 서버 (포트 3001)
 - 5000ms: BASELINES WRITER
 - 5500ms: WEATHER AGENT
 - 6000ms: COMMODITY ANALYST
+- 6500ms: FLOW REPORTER (내부적으로 시작 +20s 후 1회 실행)
 
 > 새 에이전트 추가 체크리스트: ① `server/agents/<name>.js` (run/start export) → ② `server/index.js` import + setTimeout stagger → ③ 프론트 3곳 등록: `FeedFilter.jsx` AGENT_OPTIONS, `ReportCard.jsx` AGENT_CONFIG, `useStore.js` feedFilters.agents 기본값.
 
@@ -258,7 +267,7 @@ xiamen, kaohsiung, laem_chabang, jakarta, colombo, savannah, hochiminhcity
 
 ## 통계 대시보드 (StatsDashboard.jsx)
 
-상단 StatusBar의 📊 통계 버튼으로 토글 (`useStore.showStatsDashboard` / `toggleStatsDashboard`). Recharts 기반 모달, 8개 섹션:
+상단 StatusBar의 📊 통계 버튼으로 토글 (`useStore.showStatsDashboard` / `toggleStatsDashboard`). Recharts 기반 모달, 10개 섹션:
 
 1. **KPI 카드 4개** — 추적 선박 수 / CRITICAL 경보 수 / 최고 혼잡 항만 / 위험 초크포인트
 2. **선종 분포** — 도넛 차트 (MapFilter와 동일 색상)
@@ -266,11 +275,14 @@ xiamen, kaohsiung, laem_chabang, jakarta, colombo, savannah, hochiminhcity
 4. **속력 분포** — 히스토그램 (정박·저속·항행·쾌속·고속)
 5. **항행 상태 분포** — 도넛 차트 (`nav_status` 기반)
 6. **초크포인트 통과량 vs 기준값** — 심각도별 색상 그룹 막대
-7. **에이전트 경보 타임라인** — 24시간 스택 막대 (CRITICAL/WARNING/INFO)
-8. **목적지 Top 15 + 선종 드릴다운** — destination을 `normalizeDestination`으로 정규화해 파편화(NLRTM/NL RTM/ROTTERDAM→로테르담) 통합, 막대 클릭 시 선종 드릴다운
-9. **목적지 국가 Top 10** — destination 정규화 후 국가 단위 집계
+7. **항만 혼잡도 Top 10** — 대기 선박 수 가로 막대
+8. **평년 대비 편차 보드** — 항만/초크포인트 토글, 전 지역을 평년 대비 편차(%)로 발산형 막대 정렬(빨강=악화·파랑=여유, ±150% 클램프·hover로 실값/σ). `/api/comparison-board` (각 지역 최신 baselines 스냅샷 + resolveBaselineStats)
+9. **에이전트 경보 타임라인** — 24시간 스택 막대 (CRITICAL/WARNING/INFO)
+10. **목적지 Top 15 + 선종 드릴다운 / 목적지 국가 Top 10** — destination을 `normalizeDestination`으로 정규화해 파편화(NLRTM/NL RTM/ROTTERDAM→로테르담) 통합, 막대 클릭 시 선종 드릴다운
 
-데이터 출처: 현재 선박은 store, 초크포인트·경보는 `agent_reports` Supabase 조회.
+데이터 출처: 현재 선박은 store, 초크포인트·경보는 `agent_reports` Supabase 조회, 편차 보드는 `/api/comparison-board`.
+
+> PORT 평년 기준값은 2026-06 baselines 실측 중앙값으로 재보정 완료(`portAnalyst.js` HARDCODED_BASELINE: 부산 250·로테르담 880·앤트워프 410 등). 과거 값(부산 12·로테르담 35)은 집계 방식(반경 내 ≤2kn 선박 수, 수백 척)보다 10~25배 낮아 편차가 +1000%로 과장됐으나, 지금은 대부분 ±20% 이내로 정상화. 미측정 항만(커버리지 공백)은 규모 기반 추정치이며 ≤2kn 선박이 거의 안 잡혀 편차 보드엔 보통 미노출.
 
 ---
 
@@ -327,7 +339,8 @@ node_modules/.bin/vite build   # npx vite 사용 금지 (vite@8 설치 문제)
 | `ships` | AIS 현재 위치 캐시 (PK: mmsi, 30초 배치 upsert) |
 | `ship_positions` | AIS 위치 이력 (2시간 TTL) |
 | `agent_reports` | 에이전트 보고 카드 (Realtime 활성화, anon 읽기 허용) |
-| `baselines` | 항만/초크포인트 수치 스냅샷 (시계열 누적) |
+| `baselines` | 항만/초크포인트 **스칼라** 스냅샷 (waiting_ships·daily_throughput, 시계열 누적) |
+| `traffic_snapshots` | 항만/초크포인트 **분해** 스냅샷 (입출항·선종·기국·목적지·원자재 유입 추정, 30분, JSONB) — FLOW REPORTER 소스 |
 
 ### ships 테이블 주요 컬럼
 
@@ -344,6 +357,18 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 > ALTER TABLE ships ADD COLUMN IF NOT EXISTS nav_status SMALLINT;
 > ```
 > ⚠️ 이 컬럼이 없으면 서버 upsert 페이로드에 `nav_status`가 포함돼 **ships upsert 배치 전체가 매번 실패**한다(`Could not find the 'nav_status' column`). 그 결과 ships 테이블이 갱신되지 않아 지도(relay 경유)는 멀쩡해 보여도 `/api/port-stats`·`/api/chokepoint-stats`의 "실시간 현황 vs 평년"이 전부 0으로 나온다. 새 Supabase 프로젝트로 옮길 때 반드시 먼저 실행.
+
+> `traffic_snapshots` 테이블도 초기 스키마에 없음 — `supabase_schema.sql`의 해당 CREATE TABLE 블록을 SQL Editor에서 실행해야 함. **없으면 baselinesWriter의 traffic 적재가 실패(1회 경고 후 조용히 skip)하고, FLOW REPORTER는 `no_data`로 skip**한다(baselines·지도·port-stats는 정상). 직접 만들려면:
+> ```sql
+> CREATE TABLE IF NOT EXISTS traffic_snapshots (
+>   id BIGSERIAL PRIMARY KEY, location_id VARCHAR(30) NOT NULL, location_type VARCHAR(12) NOT NULL,
+>   total_ships INT NOT NULL DEFAULT 0, inbound INT, outbound INT, passing INT,
+>   vessel_type_dist JSONB, flag_dist JSONB, dest_country_dist JSONB,
+>   inbound_by_type JSONB, commodity_inflow JSONB, snapshot_at TIMESTAMP NOT NULL DEFAULT NOW());
+> CREATE INDEX IF NOT EXISTS idx_traffic_loc ON traffic_snapshots (location_id, snapshot_at DESC);
+> CREATE INDEX IF NOT EXISTS idx_traffic_at ON traffic_snapshots (snapshot_at DESC);
+> ```
+> **원자재 유입 추정(commodity_inflow)**: trafficAggregator가 입항(inbound) 선박을 선종별로 분류해 `입항 선박 × 클래스 평균 DWT(TYPICAL_DWT) × 적재율 0.85`로 추정 — 탱커=원유·석유제품(est_liquid_dwt), 벌크=건화물(est_dry_bulk_dwt), 컨테이너=TEU(est_container_teu), LNG(est_lng_dwt). 절대값은 거친 추정이라 **추세(FLOW REPORTER의 DoD 증감)**에 의미를 둔다. `/api/port-stats`가 라이브로도 반환 → 선박 동향 탭에 즉시 표시.
 
 ---
 
@@ -362,11 +387,13 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 11. **AIS 유휴 워치독**: aisstream WebSocket이 half-open(좀비)되면 `close`가 안 떠 재연결이 안 됨 → 서버가 조용히 수신 중단. `index.js`가 60초 무수신 시 소켓을 강제 종료해 재연결한다.
 12. **Render 배포 시 Supabase 키**: `seabird-server`의 `SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_URL`(render.yaml에서 `sync:false`)을 Render 대시보드에 **로컬 `server/.env`와 동일하게** 설정해야 함. 키가 잘못되면 서버의 모든 Supabase 작업이 `{"error":"Invalid API key"}`로 실패(항적·DB 쓰기 전부 불가)하나, AIS relay와 프론트 anon 읽기는 동작해 증상이 가려짐.
 13. **초크포인트 "통과 선박"은 통항량이 아니라 스냅샷**: `/api/chokepoint-stats`·`chokepointWatcher`의 카운트는 "해당 bbox 안에 최근 1h 내 위치가 잡힌 선박 수"(순간 스냅샷)이지, 1시간 동안 통과한 누적 통항량이 아니다. 그래서 bbox 크기·AIS 커버리지에 따라 절대값이 크게 다르다(말라카 큰 박스 = 수백, 호르무즈 무수신 ≈ 0).
-14. **평년(baseline) 산출 정책 — `agents/baselineUtils.js` `resolveBaseline(db, locationId, metric, hardcoded)`**: 항만·초크포인트 공용 헬퍼. `baselines`의 해당 metric 이력에서 **0 스냅샷(수집 공백)을 제외**한 실측 표본이 **48개 이상 + 24h 이상 분포**할 때만 그 평균을 동적 평년으로 쓰고, 그 전엔 하드코딩 기준값(초크포인트: 수에즈 58·말라카 247 등 / 항만: 부산 12·싱가포르 45 등)을 쓴다. **4곳이 동일 정책 공유** — `/api/chokepoint-stats`·`chokepointWatcher`(metric=`daily_throughput`), `/api/port-stats`·`portAnalyst`(metric=`waiting_ships`). (과거: 동적 `avg_90d`가 마이그레이션 이전 0들로 오염돼 평년이 0.1~16.5로 나오고, 항만은 패널=하드코딩/에이전트=오염 avg_90d로 따로 놀던 버그를 이 정책으로 통일·차단. `baselinesWriter`의 `avg_90d` 컬럼은 이제 소비되지 않고 이력 기록용.)
+14. **평년(baseline) 산출 정책 — `agents/baselineUtils.js` `resolveBaseline(db, locationId, metric, hardcoded)`**: 항만·초크포인트 공용 헬퍼. `baselines`의 해당 metric 이력에서 **0 스냅샷(수집 공백)을 제외**한 실측 표본이 **48개 이상 + 24h 이상 분포**할 때만 그 평균을 동적 평년으로 쓰고, 그 전엔 하드코딩 기준값(초크포인트: 수에즈 58·말라카 247 등 / 항만: 부산 250·로테르담 880 등 — 2026-06 실측 중앙값 재보정)을 쓴다. **4곳이 동일 정책 공유** — `/api/chokepoint-stats`·`chokepointWatcher`(metric=`daily_throughput`), `/api/port-stats`·`portAnalyst`(metric=`waiting_ships`). 하드코딩 기준값 단일 소스는 `portAnalyst.js`(HARDCODED_BASELINE)·`chokepointWatcher.js`이며, `baselinesWriter.js`의 중복 맵은 제거됨(실측 스냅샷만 기록). (과거: 동적 `avg_90d`가 마이그레이션 이전 0들로 오염돼 평년이 0.1~16.5로 나오고, 항만은 패널=하드코딩/에이전트=오염 avg_90d로 따로 놀던 버그를 이 정책으로 통일·차단. `baselinesWriter`의 `avg_90d` 컬럼은 이제 소비되지 않고 이력 기록용.)
 15. **에이전트 Claude JSON 견고성 — `agents/claudeClient.js`**: `callClaude`가 응답 JSON을 추출할 때 객체(`{}`)·배열(`[]`) 모두 지원, 코드펜스·후행콤마 제거, 파싱 실패 시 누락 콤마(`}{`→`},{`) 보정, 그래도 실패하면 **1회 재시도**(429/5xx·네트워크·파싱 실패). 또한 `max_tokens`가 작으면 큰 마크다운(예: PORT_ANALYST 30개 항만 표, MASTER 5섹션)이 잘려 "Unterminated JSON"이 나므로 충분히 잡음 — portAnalyst 4000, chokepointWatcher 6000, masterAgent 3000. 과거엔 배열 미지원+토큰 부족으로 PORT/CHOKEPOINT 보고가 주기적으로 유실됐다.
 16. **보고 카드 중복 key 방지 — `useStore.addReport`**: 초기 로드(50건) + Realtime 구독 + React StrictMode 이중 마운트로 같은 `agent_reports` 행이 중복 추가돼 React "duplicate key" 경고가 대량 발생했음 → `addReport`가 동일 `id` 존재 시 무시. (브라우저 콘솔 점검은 헤드리스 Chrome+CDP로 가능: 단 WebGL이 없으면 Mapbox가 죽으므로 `--enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader`로 SW 렌더 활성화 필요.)
 17. **WebGL 미지원 폴백 — `MapView.jsx`**: 에러 바운더리가 없어, WebGL 비활성 브라우저에서 Mapbox 초기화 실패 시 앱 전체가 흰 화면이 됐음 → `new mapboxgl.Map`을 try/catch로 감싸 실패 시 안내 오버레이 표시(`mapError`). `map.on('error')`로 비치명적 타일 에러 콘솔 스팸도 억제.
 18. **지도 선박 색상(선종) 비어 보임 — `useAISStream`**: 라이브 relay PositionReport는 `vessel_type='Other'`로만 들어오고, 과거엔 localStorage 캐시가 신선하면 Supabase 보강을 통째로 생략해 지도가 거의 회색이었음. → `enrichFromSupabase`를 **로드 시 항상 + 3분 주기**로 실행해 서버가 누적한 선종/국적을 지도에 병합(`updated_at` 최신순으로 송신 중 선박과 매칭률↑). Class B 메시지(19/24)도 처리. 효과: 색칠 비율 ~0% → ~55%(무료 티어 선종 수신율 상한 내 최대치). DB 전체 선종 보유율 자체는 ~37%(정적 메시지 희소).
+
+19. **`ship_positions` 폭증 → Supabase 리소스 소진 (2026-06-13 수정)**: `index.js`가 글로벌 AIS의 **모든** PositionReport를 그대로 `ship_positions`에 INSERT해, 6h TTL만으로도 **~1,130만 행**이 쌓여 무료 티어 디스크 I/O·autovacuum을 소진(대시보드 "exhausting multiple resources" 경고). 수정: ① **같은 mmsi는 60초당 1건만 저장**(`lastPositionStoredAt` throttle) → 쓰기량 10~30×↓, ② TTL **6h→2h**(`POSITIONS_TTL_MS`), ③ 정리 주기 1h→20분(작은 배치). 추가로 TTL DELETE가 풀스캔하지 않도록 `idx_ship_positions_recorded_at`(recorded_at 단독) 인덱스 필요. **기존 백로그는 `TRUNCATE ship_positions;`(SQL Editor)로 즉시 비워야 함** — 항적은 ephemeral이라 수 분 내 재축적. (ship-track 쿼리는 mmsi당 ~120점/2h로 충분.)
 
 ---
 
@@ -384,5 +411,5 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 | 5+++ | 통계 대시보드(Recharts 8섹션) + Cargo 캐시(12h) + localStorage 선박 캐시 | ✅ 완료 |
 | 5++++ | WEATHER AGENT(Open-Meteo 날씨 이모지 마커) + COMMODITY ANALYST(Perplexity 원자재·운임 시황) 추가 | ✅ 완료 |
 | 6 | Vercel/Render 배포 (프론트 seabird-tau.vercel.app, 서버 seabird.onrender.com) | ✅ 완료 |
-| 6+ | 비교 수치 시스템 | 🔲 |
+| 6+ | 비교 수치 시스템 (점=평년 게이지 / 추이=24h 스파크라인·z-score / 지역=편차 보드) | ✅ 완료 |
 | 7 | 버그픽스 + 데모 시나리오 준비 | 🔲 |
