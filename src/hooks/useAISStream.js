@@ -9,6 +9,7 @@ const LS_CACHE_TTL_MS = 10 * 60 * 1000; // 10분
 const PROXY_WS_URL = import.meta.env.VITE_PROXY_URL
   ? import.meta.env.VITE_PROXY_URL.replace(/^http/, 'ws') + '/relay'
   : 'ws://localhost:3001/relay';
+const SELECT_COLS = 'mmsi, ship_name, vessel_type, lat, lng, speed, heading, destination, flag_country, nav_status, eta';
 
 export function useAISStream(mapRef) {
   const bufferRef = useRef([]);
@@ -51,23 +52,11 @@ export function useAISStream(mapRef) {
     await enrichFromSupabase();
   }, [mapRef, setShipCount]);
 
-  // Supabase ships 테이블의 정적 데이터(선종·국적·선명·목적지)를 라이브 지도에 병합.
-  // 주기적으로도 호출돼 서버가 선종을 더 받을수록 지도가 점점 색칠된다.
-  const enrichFromSupabase = useCallback(async () => {
-    // updated_at 최신순 — 지금 송신 중인(=지도에 떠 있는) 선박과 최대한 겹치게 해 선종 매칭률↑
-    const { data: ships } = await supabase
-      .from('ships')
-      .select('mmsi, ship_name, vessel_type, lat, lng, speed, heading, destination, flag_country, nav_status, eta')
-      .not('lat', 'is', null)
-      .order('updated_at', { ascending: false })
-      .limit(6000);
-
-    if (!ships?.length) return;
-
+  // ships 행을 shipMapRef에 병합 (라이브 위치는 유지, 정적 데이터만 보강)
+  const applyRows = useCallback((ships) => {
     ships.forEach((ship) => {
       const existing = shipMapRef.current.get(ship.mmsi);
       if (existing) {
-        // 라이브 스트림 위치는 유지하되 정적 데이터만 보강
         if (ship.ship_name) existing.properties.ship_name = ship.ship_name;
         if (ship.vessel_type && ship.vessel_type !== 'Other') existing.properties.vessel_type = ship.vessel_type;
         if (ship.destination) existing.properties.destination = ship.destination;
@@ -92,6 +81,39 @@ export function useAISStream(mapRef) {
         });
       }
     });
+  }, []);
+
+  // Supabase ships 테이블의 정적 데이터(선종·국적·선명·목적지)를 라이브 지도에 병합.
+  // 주기적으로도 호출돼 서버가 선종을 더 받을수록 지도가 점점 색칠된다.
+  const enrichFromSupabase = useCallback(async () => {
+    // 1) 화면 우선 보강 — 지금 지도에 떠 있으면서 아직 선종 미상('Other')이거나 국적 없는 선박을
+    //    MMSI로 직접 조회. 6000 제한과 무관하게 '화면에 보이는 선박'을 100% 커버한다.
+    //    (과거엔 updated_at 최신 6000척만 끌어와, 6000 바깥 선박은 클릭해야만 선종이 보였음.)
+    const needIds = [];
+    for (const [mmsi, f] of shipMapRef.current) {
+      if (!f.properties.vessel_type || f.properties.vessel_type === 'Other' || !f.properties.flag_country) {
+        needIds.push(mmsi);
+      }
+    }
+    if (needIds.length) {
+      const CHUNK = 300; // PostgREST URL 길이 한계 회피
+      const chunks = [];
+      for (let i = 0; i < needIds.length; i += CHUNK) chunks.push(needIds.slice(i, i + CHUNK));
+      const results = await Promise.all(
+        chunks.map((c) => supabase.from('ships').select(SELECT_COLS).in('mmsi', c).then(({ data }) => data ?? []))
+      );
+      results.forEach((rows) => applyRows(rows));
+    }
+
+    // 2) prefetch — 아직 지도에 없는(곧 들어올) 최신 선박. updated_at 최신순 6000척.
+    const { data: ships } = await supabase
+      .from('ships')
+      .select(SELECT_COLS)
+      .not('lat', 'is', null)
+      .order('updated_at', { ascending: false })
+      .limit(6000);
+
+    if (ships?.length) applyRows(ships);
 
     // 지도 갱신 + localStorage 갱신
     const source = mapRef.current?.getSource('ships');
@@ -102,7 +124,7 @@ export function useAISStream(mapRef) {
       localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ ts: now, features }));
       lastSaveRef.current = now;
     } catch { /* 용량 초과 등 무시 */ }
-  }, [mapRef, setShipCount]);
+  }, [mapRef, setShipCount, applyRows]);
 
   const flushBuffer = useCallback(() => {
     if (!mapRef.current) return;

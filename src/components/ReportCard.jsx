@@ -13,6 +13,7 @@ const AGENT_CONFIG = {
   GEOPOLITICAL_LINKER: { icon: '🌐', label: 'GEO LINKER' },
   WEATHER_AGENT:       { icon: '🌪️', label: 'WEATHER' },
   COMMODITY_ANALYST:   { icon: '💹', label: 'COMMODITY' },
+  FLOW_REPORTER:       { icon: '🛢️', label: 'FLOW' },
 };
 
 function DataPointChip({ dp }) {

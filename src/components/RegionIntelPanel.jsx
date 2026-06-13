@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import useStore from '../store/useStore.js';
 import { REGION_DATA } from '../data/regionData.js';
+import Sparkline from './Sparkline.jsx';
 
 const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
 
@@ -40,6 +41,74 @@ function ComparisonGauge({ label, current, baseline, unit, higherIsBad = true })
         <span>현재 {current}{unit}</span>
         <span>평년 {baseline}{unit}</span>
       </div>
+    </div>
+  );
+}
+
+// z-score 배지 (평년 대비 표준편차 단위 편차 — 통계적 이상치)
+function ZBadge({ z, higherIsBad }) {
+  if (z == null) return null;
+  const bad = higherIsBad ? z : -z; // 나쁜 방향일수록 큰 양수
+  const color = bad > 2 ? 'text-red-400 bg-red-500/15'
+    : bad > 1 ? 'text-yellow-400 bg-yellow-500/15'
+    : 'text-white/50 bg-white/8';
+  const sign = z > 0 ? '+' : '';
+  return <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${color}`}>{sign}{z}σ</span>;
+}
+
+// 최근 추이 카드 — 스파크라인 + 추세 + z-score
+const TREND_LABEL = { rising: '▲ 상승', falling: '▼ 하락', flat: '― 안정' };
+function TrendCard({ hist, higherIsBad }) {
+  if (!hist || hist.error) return null;
+  const trendColor = hist.trend === 'rising'
+    ? (higherIsBad ? 'text-red-400' : 'text-green-400')
+    : hist.trend === 'falling'
+    ? (higherIsBad ? 'text-green-400' : 'text-red-400')
+    : 'text-white/50';
+  return (
+    <div className="space-y-1.5 pt-1">
+      <div className="flex items-center justify-between">
+        <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">📈 최근 추이 (24h)</p>
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[10px] font-mono ${trendColor}`}>{TREND_LABEL[hist.trend]}</span>
+          <ZBadge z={hist.z} higherIsBad={higherIsBad} />
+        </div>
+      </div>
+      <Sparkline series={hist.series} baseline={hist.baseline} higherIsBad={higherIsBad} />
+      {hist.has_dynamic === false && (
+        <p className="text-[8px] text-white/25 font-mono">※ 평년 = 기준값 (이력 누적 중, {hist.n}표본)</p>
+      )}
+    </div>
+  );
+}
+
+// 원자재 유입 추정 카드 (입항 선박 기준, 만재 가정)
+function CommodityInflow({ ci }) {
+  if (!ci) return null;
+  const totalEst = (ci.est_liquid_dwt || 0) + (ci.est_dry_bulk_dwt || 0) + (ci.est_container_teu || 0) + (ci.est_lng_dwt || 0);
+  if (totalEst <= 0) return null;
+  const tons = (dwt) => (dwt >= 10000 ? `${(dwt / 10000).toFixed(1)}만 t` : `${(dwt || 0).toLocaleString()} t`);
+  const cards = [
+    { show: ci.tanker_ships > 0,    emoji: '🛢️', label: '원유·석유제품',        ships: ci.tanker_ships,    val: tons(ci.est_liquid_dwt) },
+    { show: ci.bulk_ships > 0,      emoji: '⛏️', label: '건화물(광석·석탄·곡물)', ships: ci.bulk_ships,      val: tons(ci.est_dry_bulk_dwt) },
+    { show: ci.container_ships > 0, emoji: '📦', label: '컨테이너',              ships: ci.container_ships, val: `${(ci.est_container_teu || 0).toLocaleString()} TEU` },
+    { show: ci.lng_ships > 0,       emoji: '🔥', label: 'LNG',                  ships: ci.lng_ships,       val: tons(ci.est_lng_dwt) },
+  ].filter(c => c.show);
+  return (
+    <div className="space-y-2">
+      <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">🛢️ 원자재 유입 추정 (입항 만재 가정)</p>
+      <div className="grid grid-cols-2 gap-2">
+        {cards.map(c => (
+          <div key={c.label} className="bg-white/5 border border-white/10 rounded-lg p-2.5">
+            <p className="text-[10px] text-white/60 leading-tight">{c.emoji} {c.label}</p>
+            <p className="text-lg font-bold font-mono text-white leading-tight mt-0.5">{c.val}</p>
+            <p className="text-[9px] text-white/35 font-mono">입항 {c.ships}척 추정</p>
+          </div>
+        ))}
+      </div>
+      <p className="text-[9px] text-white/25 leading-snug">
+        ※ 입항 선박 × 클래스 평균 DWT × 적재율 0.85의 거친 추정. 절대값보다 추세(🛢️ FLOW 리포트)에 의미.
+      </p>
     </div>
   );
 }
@@ -119,6 +188,7 @@ export default function RegionIntelPanel() {
   const { selectedRegion, setSelectedRegion } = useStore();
   const [activeTab, setActiveTab] = useState('stats');
   const [liveStats, setLiveStats] = useState(null);
+  const [hist, setHist] = useState(null);
   const [news, setNews] = useState(null);
   const [newsLoading, setNewsLoading] = useState(false);
   const newsFetchedRef = useRef(false);
@@ -129,22 +199,26 @@ export default function RegionIntelPanel() {
   useEffect(() => {
     setActiveTab('stats');
     setLiveStats(null);
+    setHist(null);
     setNews(null);
     newsFetchedRef.current = false;
 
     if (!selectedRegion) return;
 
-    if (selectedRegion.type === 'port') {
-      fetch(`${PROXY_URL}/api/port-stats?portId=${selectedRegion.id}`)
-        .then(r => r.json())
-        .then(d => setLiveStats(d))
-        .catch(() => {});
-    } else if (selectedRegion.type === 'chokepoint') {
-      fetch(`${PROXY_URL}/api/chokepoint-stats?cpId=${selectedRegion.id}`)
-        .then(r => r.json())
-        .then(d => setLiveStats(d))
-        .catch(() => {});
-    }
+    const metric = selectedRegion.type === 'port' ? 'waiting_ships' : 'daily_throughput';
+    const statsPath = selectedRegion.type === 'port'
+      ? `port-stats?portId=${selectedRegion.id}`
+      : `chokepoint-stats?cpId=${selectedRegion.id}`;
+
+    fetch(`${PROXY_URL}/api/${statsPath}`)
+      .then(r => r.json())
+      .then(d => setLiveStats(d))
+      .catch(() => {});
+
+    fetch(`${PROXY_URL}/api/baseline-history?locationId=${selectedRegion.id}&metric=${metric}&hours=24`)
+      .then(r => r.json())
+      .then(d => setHist(d))
+      .catch(() => {});
   }, [selectedRegion?.id]);
 
   // 뉴스 탭 클릭 시 lazy fetch
@@ -339,6 +413,7 @@ export default function RegionIntelPanel() {
                           <StatusBreakdown items={liveStats.status_breakdown} total={liveStats.total_ships} />
                         </div>
                       )}
+                      <TrendCard hist={hist} higherIsBad={true} />
                     </>
                   )}
 
@@ -357,6 +432,7 @@ export default function RegionIntelPanel() {
                         unit="척"
                         higherIsBad={false}
                       />
+                      <TrendCard hist={hist} higherIsBad={false} />
                     </>
                   )}
 
@@ -403,6 +479,9 @@ export default function RegionIntelPanel() {
                       ※ AIS 항행상태·목적지 미수신 → 진행방향(COG)이 항구를 향하면 입항, 반대면 출항으로 추정. 정박·저속 선박 제외.
                     </p>
                   </div>
+
+                  {/* 원자재 유입 추정 (입항 선박 기준) */}
+                  {liveStats.commodity_inflow && <CommodityInflow ci={liveStats.commodity_inflow} />}
 
                   {/* 목적지 국가 분포 (destination 정규화) */}
                   {liveStats.dest_country_dist?.length > 0 && (

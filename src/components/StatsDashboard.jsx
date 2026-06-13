@@ -7,6 +7,31 @@ import useStore from '../store/useStore.js';
 import { supabase } from '../utils/supabaseClient.js';
 import { normalizeDestination } from '../utils/destinationNormalizer.js';
 
+const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
+
+// 편차 보드 막대 색 — 악화 방향(빨강)·여유 방향(파랑)
+function boardBarColor(pct, higherIsBad) {
+  const bad = higherIsBad ? pct : -pct; // 큰 양수 = 악화
+  if (bad > 50) return '#EF4444';
+  if (bad > 20) return '#EAB308';
+  if (bad < -20) return '#3B82F6';
+  return '#64748B';
+}
+
+function BoardTooltip({ active, payload }) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0].payload;
+  return (
+    <div className="bg-sea-panel border border-sea-border rounded-lg px-3 py-2 text-[11px] font-mono">
+      <p className="text-white font-bold mb-1">{d.name}</p>
+      <p className="text-white/60">현재 {d.current} · 평년 {d.baseline}</p>
+      <p className="text-white/60">
+        편차 {d.pct > 0 ? '+' : ''}{d.pct}%{d.z != null ? ` · ${d.z > 0 ? '+' : ''}${d.z}σ` : ''}
+      </p>
+    </div>
+  );
+}
+
 // destination 자유텍스트 → 정규화 표시 라벨 (없으면 null → 집계 제외)
 function destLabel(raw) {
   const r = normalizeDestination(raw);
@@ -96,6 +121,8 @@ export default function StatsDashboard() {
   const [ships, setShips] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDest, setSelectedDest] = useState(null);
+  const [boardMetric, setBoardMetric] = useState('daily_throughput'); // 초크포인트 기본 (이력 깔끔)
+  const [board, setBoard] = useState([]);
 
   // 대시보드 열릴 때 Supabase에서 선박 목록 조회
   const fetchShips = useCallback(async () => {
@@ -115,6 +142,20 @@ export default function StatsDashboard() {
       setSelectedDest(null);
     }
   }, [showStatsDashboard, fetchShips]);
+
+  // 평년 대비 편차 보드 — metric 토글 시 재조회
+  useEffect(() => {
+    if (!showStatsDashboard) return;
+    fetch(`${PROXY_URL}/api/comparison-board?metric=${boardMetric}`)
+      .then(r => r.json())
+      .then(d => setBoard(d.rows ?? []))
+      .catch(() => setBoard([]));
+  }, [showStatsDashboard, boardMetric]);
+
+  const boardData = useMemo(
+    () => board.map(r => ({ ...r, pctClamped: Math.max(-150, Math.min(150, r.pct)) })),
+    [board],
+  );
 
   // ESC로 닫기
   useEffect(() => {
@@ -224,8 +265,12 @@ export default function StatsDashboard() {
     const now = Date.now();
     const hours = Array.from({ length: 24 }, (_, i) => {
       const h = new Date(now - (23 - i) * 3600000);
+      // 한국 시간(KST) 기준 시각 라벨
+      const kstHour = parseInt(
+        new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false }).format(h), 10,
+      ) % 24;
       return {
-        label: `${h.getHours()}시`,
+        label: `${kstHour}시`,
         CRITICAL: 0,
         WARNING: 0,
         INFO: 0,
@@ -504,6 +549,49 @@ export default function StatsDashboard() {
             </ResponsiveContainer>
           </SectionCard>
         )}
+
+        {/* 평년 대비 편차 보드 — 지역 간 비교 */}
+        <SectionCard title="평년 대비 편차 보드">
+          <div className="flex gap-1.5 mb-3">
+            {[['daily_throughput', '초크포인트'], ['waiting_ships', '항만']].map(([m, label]) => (
+              <button
+                key={m}
+                onClick={() => setBoardMetric(m)}
+                className={`text-[10px] font-mono px-2.5 py-1 rounded border transition-colors ${
+                  boardMetric === m
+                    ? 'border-blue-500 bg-blue-500/15 text-white'
+                    : 'border-sea-border text-sea-muted hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {boardData.length === 0 ? (
+            <p className="text-[11px] text-sea-muted font-mono py-10 text-center">이력 데이터 누적 중…</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={Math.max(160, boardData.length * 30)}>
+              <BarChart data={boardData} layout="vertical" margin={{ left: 16, right: 24, top: 0, bottom: 0 }}>
+                <XAxis
+                  type="number" domain={[-150, 150]}
+                  tickFormatter={(v) => `${v}%`}
+                  tick={{ fill: '#64748B', fontSize: 10 }} axisLine={false} tickLine={false}
+                />
+                <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: 10 }} width={84} axisLine={false} tickLine={false} />
+                <Tooltip content={<BoardTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                <ReferenceLine x={0} stroke="#334155" />
+                <Bar dataKey="pctClamped" name="편차" radius={[0, 3, 3, 0]}>
+                  {boardData.map((entry, i) => (
+                    <Cell key={i} fill={boardBarColor(entry.pct, boardMetric === 'waiting_ships')} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+          <p className="text-[8px] text-white/25 font-mono mt-1">
+            평년 대비 편차(%). 빨강=악화(혼잡↑·통항↓) · 파랑=여유. 막대는 ±150%에서 잘림(실값은 hover).
+          </p>
+        </SectionCard>
 
         {/* 에이전트 경보 타임라인 */}
         <SectionCard title="에이전트 경보 타임라인 (최근 24시간)">

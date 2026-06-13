@@ -7,6 +7,7 @@ const AGENT_OPTIONS = [
   { id: 'GEOPOLITICAL_LINKER', label: '🌐 Geo' },
   { id: 'WEATHER_AGENT',       label: '🌪️ Weather' },
   { id: 'COMMODITY_ANALYST',   label: '💹 Commodity' },
+  { id: 'FLOW_REPORTER',       label: '🛢️ Flow' },
 ];
 
 const SEVERITY_OPTIONS = ['CRITICAL', 'WARNING', 'INFO'];

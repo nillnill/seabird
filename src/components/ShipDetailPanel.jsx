@@ -148,17 +148,33 @@ function deriveNavStatus(ship) {
   return { label: '운항 중', color: '#22C55E', inferred: true, icon: '🚢' };
 }
 
+// AIS ETA 객체(Month/Day/Hour/Minute)는 UTC 기준 → 연도 보강해 UTC Date로 변환(과거면 내년).
+function etaObjectToDate(eta) {
+  const now = new Date();
+  let target = new Date(Date.UTC(now.getUTCFullYear(), eta.Month - 1, eta.Day, eta.Hour || 0, eta.Minute || 0));
+  if (target.getTime() < now.getTime()) {
+    target = new Date(Date.UTC(now.getUTCFullYear() + 1, eta.Month - 1, eta.Day, eta.Hour || 0, eta.Minute || 0));
+  }
+  return target;
+}
+
+// Date → 한국 시간(KST) "MM/DD HH:MM"
+function fmtKstMMDDHHmm(date) {
+  if (!date || isNaN(date.getTime())) return null;
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(date).map(x => [x.type, x.value])
+  );
+  const hh = p.hour === '24' ? '00' : p.hour;
+  return `${p.month}/${p.day} ${hh}:${p.minute}`;
+}
+
 // ETA까지 남은 시간(시간 단위). eta는 ISO 문자열 또는 {Month,Day,Hour,Minute} 객체.
 function hoursUntil(eta) {
   if (!eta) return null;
-  let target;
-  if (typeof eta === 'object' && eta.Month) {
-    const now = new Date();
-    target = new Date(now.getFullYear(), eta.Month - 1, eta.Day, eta.Hour || 0, eta.Minute || 0);
-    if (target < now) target = new Date(now.getFullYear() + 1, eta.Month - 1, eta.Day, eta.Hour || 0, eta.Minute || 0);
-  } else {
-    target = new Date(eta);
-  }
+  const target = (typeof eta === 'object' && eta.Month) ? etaObjectToDate(eta) : new Date(eta);
   if (isNaN(target.getTime())) return null;
   return Math.round((target.getTime() - Date.now()) / 3600000);
 }
@@ -192,17 +208,15 @@ function timeAgo(ts) {
   return `${Math.floor(h / 24)}일 전`;
 }
 
+// ETA 표시(KST "MM/DD HH:MM"). AIS 객체값은 UTC라 변환 후 한국 시간으로.
 function formatEta(eta) {
   if (!eta) return null;
   try {
-    if (typeof eta === 'object' && eta.Month) {
-      const { Month: mo, Day: d, Hour: h, Minute: mi } = eta;
-      if (mo === 0 && d === 0) return null;
-      return `${String(mo).padStart(2,'0')}/${String(d).padStart(2,'0')} ${String(h).padStart(2,'0')}:${String(mi).padStart(2,'0')}`;
+    if (typeof eta === 'object' && eta.Month != null) {
+      if (eta.Month === 0 && eta.Day === 0) return null;
+      return fmtKstMMDDHHmm(etaObjectToDate(eta));
     }
-    const date = new Date(eta);
-    if (isNaN(date.getTime())) return null;
-    return `${String(date.getMonth()+1).padStart(2,'0')}/${String(date.getDate()).padStart(2,'0')} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+    return fmtKstMMDDHHmm(new Date(eta));
   } catch { return null; }
 }
 

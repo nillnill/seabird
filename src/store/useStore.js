@@ -35,7 +35,7 @@ const useStore = create((set) => ({
   // 피드 상태
   reports: [],
   feedFilters: {
-    agents: ['PORT_ANALYST', 'CHOKEPOINT_WATCHER', 'CARGO_ESTIMATOR', 'GEOPOLITICAL_LINKER', 'WEATHER_AGENT', 'COMMODITY_ANALYST'],
+    agents: ['PORT_ANALYST', 'CHOKEPOINT_WATCHER', 'CARGO_ESTIMATOR', 'GEOPOLITICAL_LINKER', 'WEATHER_AGENT', 'COMMODITY_ANALYST', 'FLOW_REPORTER'],
     severities: ['INFO', 'WARNING', 'CRITICAL'],
     timeRange: '24h',
   },
