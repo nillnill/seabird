@@ -113,6 +113,54 @@ function CommodityInflow({ ci }) {
   );
 }
 
+// 증감 윈도우 (DoD/WoW/MoM/YoY) — 규칙 기반 해석(DoD 제외, WoW/MoM/YoY 중 최대 변동)
+function interpretChange(windows, higherIsBad) {
+  const cand = (windows || []).filter(w => w.key !== 'DoD' && w.available && Math.abs(w.change_pct) >= 10);
+  if (!cand.length) return null;
+  const top = cand.sort((a, b) => Math.abs(b.change_pct) - Math.abs(a.change_pct))[0];
+  const up = top.change_pct > 0;
+  const bad = higherIsBad ? up : !up;
+  const mag = Math.abs(top.change_pct) >= 30 ? '뚜렷한' : '완만한';
+  const tail = higherIsBad
+    ? (bad ? '혼잡·대기 가중 추세' : '혼잡 완화 추세')
+    : (bad ? '통항 둔화 — 공급망 영향 주시' : '통항 회복세');
+  return `${top.label} 대비 ${mag} ${up ? '증가' : '감소'}(${up ? '+' : ''}${top.change_pct}%) — ${tail}`;
+}
+function ChangeChip({ w, higherIsBad, unit }) {
+  if (!w.available) {
+    return (
+      <div className="bg-white/[0.03] border border-white/5 rounded-lg px-2.5 py-1.5">
+        <p className="text-[9px] font-mono text-white/40">{w.key} <span className="text-white/25">{w.label}</span></p>
+        <p className="text-[10px] text-white/25">데이터 누적 중</p>
+      </div>
+    );
+  }
+  const p = w.change_pct;
+  const bad = higherIsBad ? p > 0 : p < 0;
+  const color = Math.abs(p) < 3 ? 'text-white/60' : bad ? 'text-red-400' : 'text-green-400';
+  const arrow = p > 2 ? '▲' : p < -2 ? '▼' : '―';
+  return (
+    <div className="bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5">
+      <p className="text-[9px] font-mono text-white/40">{w.key} <span className="text-white/25">{w.label}</span></p>
+      <p className={`text-sm font-bold font-mono ${color}`}>{arrow} {p > 0 ? '+' : ''}{p}%</p>
+      <p className="text-[8px] font-mono text-white/30">{w.current}{unit} / {w.baseline}{unit}</p>
+    </div>
+  );
+}
+function ChangeWindows({ data, higherIsBad, unit = '척' }) {
+  if (!data?.windows) return null;
+  const interp = interpretChange(data.windows, higherIsBad);
+  return (
+    <div className="space-y-1.5 pt-1">
+      <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">📊 증감 (전일·전주·전월·전년)</p>
+      <div className="grid grid-cols-2 gap-1.5">
+        {data.windows.map(w => <ChangeChip key={w.key} w={w} higherIsBad={higherIsBad} unit={unit} />)}
+      </div>
+      {interp && <p className="text-[10px] text-white/55 leading-snug">💡 {interp}</p>}
+    </div>
+  );
+}
+
 // 상태 세분화 가로 막대 (정박/대기/기동/항행)
 const STATUS_COLOR = {
   berthed: 'bg-slate-400/70',
@@ -189,6 +237,7 @@ export default function RegionIntelPanel() {
   const [activeTab, setActiveTab] = useState('stats');
   const [liveStats, setLiveStats] = useState(null);
   const [hist, setHist] = useState(null);
+  const [changes, setChanges] = useState(null);
   const [news, setNews] = useState(null);
   const [newsLoading, setNewsLoading] = useState(false);
   const newsFetchedRef = useRef(false);
@@ -200,6 +249,7 @@ export default function RegionIntelPanel() {
     setActiveTab('stats');
     setLiveStats(null);
     setHist(null);
+    setChanges(null);
     setNews(null);
     newsFetchedRef.current = false;
 
@@ -218,6 +268,11 @@ export default function RegionIntelPanel() {
     fetch(`${PROXY_URL}/api/baseline-history?locationId=${selectedRegion.id}&metric=${metric}&hours=24`)
       .then(r => r.json())
       .then(d => setHist(d))
+      .catch(() => {});
+
+    fetch(`${PROXY_URL}/api/change-windows?locationId=${selectedRegion.id}&metric=${metric}`)
+      .then(r => r.json())
+      .then(d => setChanges(d))
       .catch(() => {});
   }, [selectedRegion?.id]);
 
@@ -414,6 +469,7 @@ export default function RegionIntelPanel() {
                         </div>
                       )}
                       <TrendCard hist={hist} higherIsBad={true} />
+                      <ChangeWindows data={changes} higherIsBad={true} unit="척" />
                     </>
                   )}
 
@@ -433,6 +489,7 @@ export default function RegionIntelPanel() {
                         higherIsBad={false}
                       />
                       <TrendCard hist={hist} higherIsBad={false} />
+                      <ChangeWindows data={changes} higherIsBad={false} unit="척" />
                     </>
                   )}
 

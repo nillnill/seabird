@@ -47,7 +47,7 @@ seabird/
 │   └── generate_character_excel.cjs  ← 캐릭터 엑셀 재생성 스크립트
 │
 ├── server/
-│   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/baseline-history + /api/comparison-board + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작
+│   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/baseline-history + /api/change-windows + /api/comparison-board + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작 (통계 GET 60초 캐시·comparison-board 4배치)
 │   ├── package.json
 │   ├── .env                   ← 서버 환경변수 (git 제외)
 │   ├── agents/
@@ -83,7 +83,7 @@ seabird/
     │   ├── ChokepointMarker.jsx ← 7개 초크포인트 HTML 마커 (severity pulse 애니메이션)
     │   ├── WeatherMarker.jsx  ← 날씨 이모지 마커 13개 해역 (WEATHER_AGENT raw_data.points 연동)
     │   ├── Sparkline.jsx      ← 경량 SVG 스파크라인 (baselines 시계열 추이 + 평년 기준선, Recharts 없이 인라인). RegionIntelPanel 현황 탭 추이 카드에 사용
-    │   ├── RegionIntelPanel.jsx ← 지역 인텔 모달 (Civ7 스타일, 탭: 현황/[선박 동향(항만 전용)]/역사/뉴스, 캐릭터 이미지 지원). 현황=상태 세분화(정박/대기/기동/항행)+평년 게이지+**최근 추이(24h 스파크라인·추세·z-score 배지, /api/baseline-history)**, 선박 동향=입출항 추정·**원자재 유입 추정(CommodityInflow: 원유·건화물·컨테이너·LNG)**·선종·기국·목적지 분포
+    │   ├── RegionIntelPanel.jsx ← 지역 인텔 모달 (Civ7 스타일, 탭: 현황/[선박 동향(항만 전용)]/역사/뉴스, 캐릭터 이미지 지원). 현황=상태 세분화(정박/대기/기동/항행)+평년 게이지+**최근 추이(24h 스파크라인·추세·z-score, /api/baseline-history)**+**증감 윈도우(ChangeWindows: DoD/WoW/MoM/YoY, /api/change-windows — baselines에서 최근24h vs N일전 24h 비교, 이력 없는 윈도우는 '누적 중', WoW↑만 규칙기반 해석·DoD 해석 생략)**, 선박 동향=입출항 추정·**원자재 유입 추정(CommodityInflow: 원유·건화물·컨테이너·LNG)**·선종·기국·목적지 분포
     │   ├── CommandFeed.jsx    ← 오른쪽 패널 전체
     │   ├── CommanderInput.jsx ← 자연어 입력창
     │   ├── ReportCard.jsx     ← 에이전트 보고 카드 (MASTER_AGENT: 보라색)

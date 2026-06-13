@@ -672,6 +672,58 @@ app.get('/api/baseline-history', async (req, res) => {
   }
 });
 
+// 증감 윈도우 — DoD/WoW/MoM/YoY. baselines 이력에서 "최근 24h 평균" vs "N일 전 같은 24h 평균" 비교.
+// 한 쿼리로 4개 윈도우 계산. 과거 데이터가 없는 윈도우는 available:false('누적 중').
+const CHANGE_DEFS = [['DoD', '전일', 1], ['WoW', '전주', 7], ['MoM', '전월', 30], ['YoY', '전년', 365]];
+app.get('/api/change-windows', async (req, res) => {
+  const { locationId, metric = 'daily_throughput' } = req.query;
+  if (!locationId) return res.status(400).json({ error: 'locationId required' });
+
+  const cacheKey = `chg:${locationId}:${metric}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const DAY = 86400000, W = 24 * 3600000;
+    const cutoff = new Date(Date.now() - (366 * DAY)).toISOString();
+    const { data: rows } = await supabase.from('baselines')
+      .select('current_value, snapshot_at')
+      .eq('location_id', locationId).eq('metric', metric)
+      .gte('snapshot_at', cutoff)
+      .order('snapshot_at', { ascending: true });
+
+    const samples = (rows ?? [])
+      .map(r => ({ v: parseFloat(r.current_value), t: Date.parse(r.snapshot_at) }))
+      .filter(s => s.v > 0 && Number.isFinite(s.t)); // 0 = 수집 공백 제외 (resolveBaseline과 동일 정책)
+
+    const now = Date.now();
+    const avgIn = (a, b) => {
+      const xs = samples.filter(s => s.t >= a && s.t < b);
+      return xs.length ? xs.reduce((s, x) => s + x.v, 0) / xs.length : null;
+    };
+    const cur = avgIn(now - W, now);
+
+    const windows = CHANGE_DEFS.map(([key, label, lagDays]) => {
+      const base = avgIn(now - lagDays * DAY - W, now - lagDays * DAY);
+      const available = cur != null && base != null && base > 0;
+      return {
+        key, label,
+        current: cur != null ? Math.round(cur * 10) / 10 : null,
+        baseline: base != null ? Math.round(base * 10) / 10 : null,
+        change_pct: available ? Math.round(((cur - base) / base) * 100) : null,
+        available,
+      };
+    });
+
+    const payload = { location_id: locationId, metric, current_n: samples.filter(s => s.t >= now - W).length, windows };
+    cacheSet(cacheKey, payload);
+    res.json(payload);
+  } catch (err) {
+    console.error('[CHANGE_WINDOWS] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 레이어 3 — 전 지역 평년 대비 편차 랭킹 보드
 app.get('/api/comparison-board', async (req, res) => {
   const { metric = 'waiting_ships' } = req.query;
