@@ -16,8 +16,8 @@ const HARDCODED_BASELINE = {
 };
 
 const CHOKEPOINTS = [
-  { id: 'suez',          name: '수에즈 운하',    emoji: '🇪🇬', bbox: [[29.9, 31.8], [31.3, 33.1]],  centerLat: 30.6, centerLng: 32.5 },
-  { id: 'malacca',       name: '말라카 해협',    emoji: '🇸🇬', bbox: [[1.0, 99.5],  [6.5, 104.5]], centerLat: 2.5,  centerLng: 103.5 },
+  { id: 'suez',          name: '수에즈 운하',    emoji: '🇪🇬', bbox: [[29.9, 31.8], [31.3, 33.1]],  centerLat: 30.42, centerLng: 32.36 },
+  { id: 'malacca',       name: '말라카 해협',    emoji: '🇸🇬', bbox: [[1.0, 99.5],  [6.5, 104.5]], centerLat: 2.88,  centerLng: 100.98 },
   { id: 'hormuz',        name: '호르무즈 해협',  emoji: '🇮🇷', bbox: [[25.8, 55.5], [27.0, 57.5]], centerLat: 26.5, centerLng: 56.5 },
   { id: 'panama',        name: '파나마 운하',    emoji: '🇵🇦', bbox: [[8.8, -80.2], [9.5, -79.5]], centerLat: 9.1,  centerLng: -79.9 },
   { id: 'dover',         name: '영불 해협',      emoji: '🇬🇧', bbox: [[50.5, -2.0], [51.5, 2.5]],  centerLat: 51.0, centerLng: 1.5 },

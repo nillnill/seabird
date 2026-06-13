@@ -2,8 +2,8 @@ import mapboxgl from 'mapbox-gl';
 import useStore from '../store/useStore.js';
 
 export const CHOKEPOINTS = [
-  { id: 'suez',          name: '수에즈 운하',    lng: 32.5,   lat: 30.6 },
-  { id: 'malacca',       name: '말라카 해협',    lng: 103.5,  lat: 2.5  },
+  { id: 'suez',          name: '수에즈 운하',    lng: 32.36,  lat: 30.42 },
+  { id: 'malacca',       name: '말라카 해협',    lng: 100.98, lat: 2.88 },
   { id: 'hormuz',        name: '호르무즈 해협',  lng: 56.5,   lat: 26.5 },
   { id: 'panama',        name: '파나마 운하',    lng: -79.9,  lat: 9.1  },
   { id: 'dover',         name: '영불 해협',      lng: 1.5,    lat: 51.0 },
