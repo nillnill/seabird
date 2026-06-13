@@ -1,10 +1,52 @@
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 const AGENT_LABELS = {
   PORT_ANALYST:        '🏗️ PORT ANALYST',
   CHOKEPOINT_WATCHER:  '🚢 CHOKEPOINT WATCHER',
   CARGO_ESTIMATOR:     '📦 CARGO ESTIMATOR',
   GEOPOLITICAL_LINKER: '🌐 GEOPOLITICAL LINKER',
+  MASTER_AGENT:        '🧭 MASTER AGENT',
+  WEATHER_AGENT:       '🌪️ WEATHER AGENT',
+  COMMODITY_ANALYST:   '💹 COMMODITY ANALYST',
+  FLOW_REPORTER:       '🛢️ FLOW REPORTER',
+};
+
+// Notion 스타일 마크다운 렌더러 — 테두리 표·여백 있는 제목·읽기 좋은 문단/리스트
+const MD_COMPONENTS = {
+  h1: ({ children }) => <h1 className="text-base font-bold text-white mt-5 mb-2 first:mt-0">{children}</h1>,
+  h2: ({ children }) => (
+    <h2 className="text-sm font-bold text-white mt-5 mb-2 first:mt-0 pb-1 border-b border-white/10">{children}</h2>
+  ),
+  h3: ({ children }) => <h3 className="text-[13px] font-semibold text-white/90 mt-4 mb-1.5 first:mt-0">{children}</h3>,
+  p: ({ children }) => <p className="text-[13px] text-white/75 leading-relaxed my-2">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+  em: ({ children }) => <em className="text-white/70 not-italic">{children}</em>,
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noreferrer" className="text-blue-400 hover:text-blue-300 underline underline-offset-2">{children}</a>
+  ),
+  ul: ({ children }) => <ul className="my-2 space-y-1 list-disc pl-5 marker:text-blue-400/60">{children}</ul>,
+  ol: ({ children }) => <ol className="my-2 space-y-1 list-decimal pl-5 marker:text-white/40">{children}</ol>,
+  li: ({ children }) => <li className="text-[13px] text-white/75 leading-relaxed pl-1">{children}</li>,
+  hr: () => <hr className="my-4 border-white/10" />,
+  blockquote: ({ children }) => (
+    <blockquote className="border-l-2 border-blue-500/40 pl-3 my-2 text-white/55 text-[13px]">{children}</blockquote>
+  ),
+  code: ({ children }) => <code className="bg-white/10 text-blue-200 px-1.5 py-0.5 rounded text-[11px] font-mono">{children}</code>,
+  // ── 표 (remark-gfm) — Notion 스타일 박스 ──
+  table: ({ children }) => (
+    <div className="my-3 overflow-x-auto rounded-lg border border-white/10">
+      <table className="w-full border-collapse text-[12px]">{children}</table>
+    </div>
+  ),
+  thead: ({ children }) => <thead className="bg-white/[0.06]">{children}</thead>,
+  th: ({ children }) => (
+    <th className="text-left font-semibold text-white/70 px-3 py-2 border-b border-white/10 whitespace-nowrap">{children}</th>
+  ),
+  td: ({ children }) => (
+    <td className="text-white/80 px-3 py-2 border-b border-white/5 align-top leading-snug">{children}</td>
+  ),
+  tr: ({ children }) => <tr className="hover:bg-white/[0.03] transition-colors">{children}</tr>,
 };
 
 export default function ReportModal({ report, onClose }) {
@@ -18,18 +60,18 @@ export default function ReportModal({ report, onClose }) {
       onClick={onClose}
     >
       <div
-        className="bg-sea-panel border border-sea-border rounded-xl w-full max-w-xl max-h-[80vh] flex flex-col overflow-hidden mx-4"
+        className="bg-sea-panel border border-sea-border rounded-xl w-full max-w-2xl max-h-[82vh] flex flex-col overflow-hidden mx-4"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 헤더 */}
-        <div className="flex items-start justify-between p-4 border-b border-sea-border">
-          <div className="space-y-0.5">
-            <p className="text-[10px] text-sea-muted font-mono">{AGENT_LABELS[report.agent_id]} · {kst}</p>
-            <h2 className="text-sm font-bold text-white leading-tight">{report.title}</h2>
-            <p className="text-xs text-sea-muted">{report.summary}</p>
+        <div className="flex items-start justify-between p-4 border-b border-sea-border shrink-0">
+          <div className="space-y-1 min-w-0">
+            <p className="text-[10px] text-sea-muted font-mono">{AGENT_LABELS[report.agent_id] ?? report.agent_id} · {kst}</p>
+            <h2 className="text-base font-bold text-white leading-tight">{report.title}</h2>
+            {report.summary && <p className="text-xs text-sea-muted leading-snug">{report.summary}</p>}
           </div>
           <button
-            className="text-sea-muted hover:text-white transition-colors ml-4 shrink-0"
+            className="text-sea-muted hover:text-white transition-colors ml-4 shrink-0 text-lg leading-none"
             onClick={onClose}
           >
             ✕
@@ -37,9 +79,11 @@ export default function ReportModal({ report, onClose }) {
         </div>
 
         {/* 본문 */}
-        <div className="overflow-y-auto p-4 prose prose-invert prose-sm max-w-none">
+        <div className="overflow-y-auto px-5 py-4">
           {report.detail ? (
-            <ReactMarkdown>{report.detail}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+              {report.detail}
+            </ReactMarkdown>
           ) : (
             <p className="text-sea-muted text-sm">상세 내용이 없습니다.</p>
           )}
