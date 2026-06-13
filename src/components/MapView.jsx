@@ -191,7 +191,15 @@ export default function MapView() {
     const key = mapCenter.join(',') + ':' + mapZoom;
     if (prevCenterRef.current === key) return;
     prevCenterRef.current = key;
-    mapRef.current.flyTo({ center: mapCenter, zoom: mapZoom, duration: 1500 });
+    // 좌측 상세 패널(선박/지역, w-26rem)이 열려 있으면 대상이 패널에 가리지 않도록
+    // 화면 중심에서 우측으로 패널 폭의 절반(~210px)만큼 보정해 우측 영역 중앙에 오게 함
+    const panelOpen = selectedShip || selectedRegion;
+    mapRef.current.flyTo({
+      center: mapCenter,
+      zoom: mapZoom,
+      duration: 1500,
+      offset: panelOpen ? [210, 0] : [0, 0],
+    });
   }, [mapCenter, mapZoom]);
 
   // 지도 필터 적용
