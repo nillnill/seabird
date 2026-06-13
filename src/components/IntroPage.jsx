@@ -30,36 +30,40 @@ function ChapterLeader() {
   );
 }
 
-// ── Ch2: 해운의 역사 — 대형 일러스트 + 풍부한 서사, 스크롤형 기술 트리 ──
+// ── Ch2: 해운의 역사 — 좌우 풀폭 일러스트 배너 + 오버레이 제목 + 서사 ──
 function ChapterHistory() {
   return (
-    <div className="space-y-7">
-      {ERAS.map((e, i) => (
+    <div className="space-y-8">
+      {ERAS.map((e) => (
         <div
           key={e.key}
-          className={`flex flex-col ${i % 2 === 1 ? 'md:flex-row-reverse' : 'md:flex-row'} gap-5 items-center rounded-2xl border p-5 ${
-            e.star ? 'border-amber-400/45 bg-amber-400/[0.08]' : 'border-white/10 bg-white/[0.04]'
+          className={`rounded-2xl border overflow-hidden ${
+            e.star ? 'border-amber-400/45 bg-amber-400/[0.06]' : 'border-white/10 bg-white/[0.03]'
           }`}
         >
-          {/* 대형 일러스트 */}
-          <div className="w-full md:w-72 h-56 md:h-60 shrink-0 flex items-center justify-center rounded-xl bg-black/30 overflow-hidden">
+          {/* 좌우 100% 일러스트 배너 */}
+          <div className="relative w-full h-64 md:h-80 bg-gradient-to-b from-[#0e2236] to-[#0a1322]">
             <ImageOrEmoji
               src={`/characters/era_${e.key}.webp`} emoji={e.emoji} alt={e.title}
-              imgClass="w-full h-full object-contain drop-shadow-[0_8px_24px_rgba(0,0,0,0.55)]"
-              emojiClass="text-8xl w-full h-full"
+              imgClass="w-full h-full object-cover object-center"
+              emojiClass="text-[8rem] w-full h-full"
             />
+            {/* 하단 그라데이션 + 제목 오버레이 */}
+            <div className="absolute inset-x-0 bottom-0 h-3/4 bg-gradient-to-t from-black/90 via-black/45 to-transparent pointer-events-none" />
+            <div className="absolute bottom-0 left-0 right-0 p-5">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-mono text-amber-300 tracking-wider">{e.year}</span>
+                {e.star && <span className="text-amber-400 text-base">★</span>}
+              </div>
+              <h3 className="text-3xl md:text-4xl font-bold text-white leading-tight" style={{ fontFamily: 'serif', textShadow: '0 2px 14px rgba(0,0,0,0.85)' }}>
+                {e.title}
+              </h3>
+              {e.tagline && <p className="text-base md:text-lg italic text-amber-100/90 mt-1.5">“{e.tagline}”</p>}
+            </div>
           </div>
           {/* 서사 */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-sm font-mono text-amber-300/90 tracking-wider">{e.year}</span>
-              {e.star && <span className="text-amber-400 text-base">★</span>}
-            </div>
-            <h3 className="text-3xl font-bold text-white leading-tight" style={{ fontFamily: 'serif', textShadow: '0 1px 10px rgba(0,0,0,0.5)' }}>
-              {e.title}
-            </h3>
-            {e.tagline && <p className="text-base italic text-amber-100/75 mt-1.5">“{e.tagline}”</p>}
-            <p className="text-[15px] text-white/75 leading-relaxed mt-3">{e.desc}</p>
+          <div className="px-6 py-5">
+            <p className="text-[15px] md:text-base text-white/75 leading-relaxed">{e.desc}</p>
           </div>
         </div>
       ))}
