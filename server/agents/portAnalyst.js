@@ -100,7 +100,9 @@ async function collectPortStats(port, db) {
   const typeDist = {};
   ships.forEach(s => { const t = s.vessel_type || 'Other'; typeDist[t] = (typeDist[t] || 0) + 1; });
 
-  const severity = changePct >= 60 ? 'CRITICAL' : changePct >= 30 ? 'WARNING' : 'INFO';
+  // severity 판단(WARNING/CRITICAL)은 MASTER_AGENT 전담 — 하위 에이전트는 사실만 보고(INFO 고정).
+  // change_pct·baseline은 그대로 담아 마스터가 종합 판단에 쓴다.
+  const severity = 'INFO';
 
   return { port, total: ships.length, waiting, avg90d, changePct, typeDist, severity };
 }

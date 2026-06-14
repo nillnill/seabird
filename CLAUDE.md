@@ -57,11 +57,11 @@ seabird/
 │   │   ├── trafficAggregator.js ← 항만·초크포인트 실시간 집계 공유 모듈 aggregatePort()/aggregateChokepoint() — 선종·기국·목적지·입출항(선종별)·원자재 유입 추정(estLadenTons). port-stats·chokepoint-stats·baselinesWriter 공용
 │   │   ├── portAnalyst.js     ← 60분 폴링, Haiku, 항구별 대표 캐릭터가 1인칭으로 자기 항구 현재 상황 보고(항구당 1행). 데이터 있는 항구만(0척 skip), 재시작 중복 방지(최근 50분 내 skip), 동시성 5
 │   │   ├── chokepointWatcher.js ← 60분 폴링, Haiku, 초크포인트별 대표 캐릭터 1인칭 통항 보고(초크포인트당 1행). 0척 skip(거짓 CRITICAL 방지), raw_data.cp_id·change_pct·location.chokepoint_id 보존(마커·StatusBar 소비)
-│   │   ├── geopoliticalLinker.js ← 15분 폴링, Sonnet, Perplexity 영문검색 → 한국어 번역
-│   │   ├── masterAgent.js     ← 10분 폴링, Sonnet, 전체 종합 보고
-│   │   ├── weatherAgent.js    ← 30분 폴링, Haiku, Open-Meteo 13개 해역 날씨 → 이모지 마커
+│   │   ├── geopoliticalLinker.js ← 60분 폴링, Sonnet, Perplexity 영문검색 → 한국어 번역
+│   │   ├── masterAgent.js     ← 60분 폴링, Sonnet, **유일하게 severity(WARNING/CRITICAL)를 판단하는 에이전트**. 최근 90분 하위 '사실' 보고를 종합(data_points 현재값·평년·change_pct + 상관관계)해 위험도 결정. index.js에서 +120초 후 기동(첫 배치 적재 대기)
+│   │   ├── weatherAgent.js    ← 60분 폴링, Haiku, Open-Meteo 13개 해역 날씨 → 이모지 마커
 │   │   ├── commodityAnalyst.js ← 60분 폴링, Haiku, Perplexity 원자재·운임 가격
-│   │   ├── flowReporter.js    ← 6시간 폴링, Haiku, traffic_snapshots 이력 → 항만 원자재 유입 추세(DoD)
+│   │   ├── flowReporter.js    ← 60분 폴링, Haiku, traffic_snapshots 이력 → 항만 원자재 유입 추세(DoD)
 │   │   └── baselinesWriter.js ← 60분 폴링, aggregator로 전 지역 1회 집계 → baselines(스칼라)+traffic_snapshots(분해) 동시 적재 (무료 티어 Disk IO 절약 위해 30→60분)
 │   └── data/
 │       ├── tradePairs.js      ← 15개 교역 쌍 + 계절 인덱스 (CommonJS)
@@ -191,15 +191,17 @@ Node.js 서버 (포트 3001)
 
 에이전트는 **서버(server/agents/)** 에서 실행됨. 모델 티어화로 비용 최적화.
 
+> **severity 정책 (중요)**: WARNING/CRITICAL 판단은 **MASTER_AGENT 전담**이다. 나머지 하위 에이전트(PORT·CHOKEPOINT·WEATHER·COMMODITY·GEOPOLITICAL·FLOW)는 **사실만 보고하며 severity를 항상 `INFO`로 고정**한다(통계·change_pct·data_points는 그대로 담아 마스터의 판단 근거로 제공). 따라서 피드에서 WARNING/CRITICAL 배지는 마스터 종합 보고에서만 나타난다(MASTER는 FeedTabs '전체' 탭). ※ WEATHER의 `raw_data.points[].severity`(돌풍·🌀 등급)는 지도 마커용 기상 사실이라 예외로 유지.
+
 | 에이전트 | 파일 | 모델 | 트리거 | 동작 |
 |----------|------|------|--------|------|
 | PORT ANALYST | `server/agents/portAnalyst.js` | claude-haiku-4-5 | 60분 폴링 | **항구별** 대표 캐릭터가 1인칭으로 자기 항구의 현재 운영 상황 보고(항구당 호출 1회·행 1건). 실시간 데이터 있는 항구만(0척 skip), 최근 50분 보고 시 skip(재시작 중복 방지), Claude 동시성 5 |
 | CHOKEPOINT WATCHER | `server/agents/chokepointWatcher.js` | claude-haiku-4-5 | 60분 폴링 | **초크포인트별** 대표 캐릭터가 1인칭으로 통항 상황 보고(초크포인트당 행 1건). 0척 skip(거짓 CRITICAL 방지). `raw_data.cp_id`·`change_pct`·`location.chokepoint_id` 보존(마커·StatusBar 칩 소비) |
-| GEOPOLITICAL LINKER | `server/agents/geopoliticalLinker.js` | claude-sonnet-4-6 | 15분 폴링 | Perplexity 영문검색 → Claude 한국어 번역 |
-| MASTER AGENT | `server/agents/masterAgent.js` | claude-sonnet-4-6 | 10분 폴링 | 전체 종합, 긴급 시 에이전트 재실행 |
-| WEATHER AGENT | `server/agents/weatherAgent.js` | claude-haiku-4-5 | 30분 폴링 | Open-Meteo로 13개 해역 날씨 수집 → 이모지·심각도 마커 + 악천후 보고. 항상 보고 |
+| GEOPOLITICAL LINKER | `server/agents/geopoliticalLinker.js` | claude-sonnet-4-6 | 60분 폴링 | Perplexity 영문검색 → Claude 한국어 번역 |
+| MASTER AGENT | `server/agents/masterAgent.js` | claude-sonnet-4-6 | 60분 폴링 | **유일한 severity 판단자**. 최근 90분 하위 사실 보고를 종합해 WARNING/CRITICAL 결정 + 상관관계·근본원인·한국 공급망 영향. (재실행 로직 제거 — 하위 에이전트도 1시간 배치라 불필요) |
+| WEATHER AGENT | `server/agents/weatherAgent.js` | claude-haiku-4-5 | 60분 폴링 | Open-Meteo로 13개 해역 날씨 수집 → 이모지·심각도 마커 + 악천후 보고. 항상 보고 |
 | COMMODITY ANALYST | `server/agents/commodityAnalyst.js` | claude-haiku-4-5 | 60분 폴링 | Perplexity로 원자재·운임 가격 검색 → 구조화 data_points + 한국어 시황 |
-| FLOW REPORTER | `server/agents/flowReporter.js` | claude-haiku-4-5 | 6시간 폴링 | `traffic_snapshots` 이력에서 항만 원자재 유입 '강도'(입항 추정 톤수) 24h vs 직전 24h 추세 산출 → Claude 서술. 이력 없으면 자동 skip |
+| FLOW REPORTER | `server/agents/flowReporter.js` | claude-haiku-4-5 | 60분 폴링 | `traffic_snapshots` 이력에서 항만 원자재 유입 '강도'(입항 추정 톤수) 24h vs 직전 24h 추세 산출 → Claude 서술. 이력 없으면 자동 skip |
 | CARGO ESTIMATOR | `src/agents/cargoEstimator.js` | claude-haiku-4-5 (기본, `CARGO_MODEL` 환경변수로 오버라이드) | 선박 클릭 | 선박 종류별 전용 프롬프트, vessel_type 변경 시 자동 재실행. 응답 ~24s(Sonnet)→~13s(Haiku) |
 
 ### 에이전트 시작 지연 (server/index.js)
@@ -211,6 +213,7 @@ Node.js 서버 (포트 3001)
 - 5500ms: WEATHER AGENT
 - 6000ms: COMMODITY ANALYST
 - 6500ms: FLOW REPORTER (내부적으로 시작 +20s 후 1회 실행)
+- 120000ms: MASTER AGENT (하위 사실 보고가 쌓일 시간을 두고 기동 → severity 판단)
 
 > 새 에이전트 추가 체크리스트: ① `server/agents/<name>.js` (run/start export) → ② `server/index.js` import + setTimeout stagger → ③ 프론트 2곳 등록: `FeedTabs.jsx` TABS(해당 카테고리 탭의 agents 배열에 추가), `ReportCard.jsx` AGENT_CONFIG(아이콘·라벨). (전체 탭은 agents:null이라 자동 포함. 새 카테고리가 필요하면 TABS에 탭 객체를 추가.)
 
@@ -387,7 +390,7 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 1. **mapbox-gl 번들 크기**: 프로덕션 빌드 시 ~2.3MB 경고. 해커톤 범위에서는 무시.
 2. **heading=511**: AIS 미수신값. `aisParser.js`에서 `null`로 처리.
 3. **에이전트 초기 CRITICAL 보고**: 서버 시작 직후 AIS 데이터가 적어 초크포인트 통과량이 0으로 집계됨. 30분~1시간 후 안정화.
-4. **MASTER_AGENT 중복 실행**: 시작 시 직전 서버에서 저장된 CRITICAL 보고를 감지해 에이전트를 재실행하는 것은 정상 동작.
+4. **MASTER_AGENT 역할 변경(severity 전담)**: 과거의 '긴급 시 타 에이전트 재실행' 로직은 제거됨(하위 에이전트도 1시간 배치). 지금은 최근 90분 하위 사실 보고를 종합해 severity만 판단한다. 시작 시 +120초 후 첫 기동.
 5. **Render 콜드 스타트**: 무료 티어는 15분 비활성 후 슬립. UptimeRobot으로 30분마다 헬스체크 핑 설정 권장.
 6. **ships 테이블 미생성 시 선박 미표시**: `supabase_schema.sql` 전체를 Supabase SQL Editor에서 실행해야 함. `agent_reports`만 있고 `ships`가 없으면 지도에 선박이 나타나지 않음.
 7. **호르무즈 등 일부 해역 선박 공백**: aisstream.io 무료 티어는 지상 수신기 기반이라 페르시아만·홍해 등 일부 해역의 커버리지가 제한됨. 제재 회피 AIS 소등 선박은 수신 불가.

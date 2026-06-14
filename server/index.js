@@ -16,6 +16,7 @@ const { startGeopoliticalLinker, runGeopoliticalLinker } = require('./agents/geo
 const { startWeatherAgent } = require('./agents/weatherAgent');
 const { startCommodityAnalyst } = require('./agents/commodityAnalyst');
 const { startFlowReporter } = require('./agents/flowReporter');
+const { startMasterAgent } = require('./agents/masterAgent');
 const { callClaude } = require('./agents/claudeClient');
 const { TRADE_PAIRS, SEASONAL_INDEX, getSeasonalCategory } = require('./data/tradePairs');
 
@@ -373,6 +374,8 @@ setTimeout(() => startBaselinesWriter(),   5000);
 setTimeout(() => startWeatherAgent(),      5500);
 setTimeout(() => startCommodityAnalyst(),  6000);
 setTimeout(() => startFlowReporter(),      6500);
+// MASTER는 하위 '사실' 보고를 종합해 severity를 판단 → 첫 배치가 쌓일 시간을 두고 120초 후 기동
+setTimeout(() => startMasterAgent(),        120000);
 
 // ── HTTP 엔드포인트 ───────────────────────────────────────────────────────────
 app.get('/health', (_, res) => res.json({ status: 'ok', ships_tracked: shipState.size, dirty: dirtyMmsi.size }));

@@ -63,9 +63,8 @@ async function collectStats(cp, db) {
 
   const baseline = await resolveBaseline(db, cp.id, 'daily_throughput', HARDCODED_BASELINE[cp.id] ?? 50);
   const changePct = baseline > 0 ? Math.round(((ships.length - baseline) / baseline) * 100) : 0;
-  const severity = ships.length <= baseline * 0.5 ? 'CRITICAL'
-    : ships.length <= baseline * 0.75 ? 'WARNING'
-    : 'INFO';
+  // severity 판단(WARNING/CRITICAL)은 MASTER_AGENT 전담 — 하위 에이전트는 사실만 보고(INFO 고정).
+  const severity = 'INFO';
 
   return { cp, ships: ships.length, typeDist, baseline, changePct, severity };
 }

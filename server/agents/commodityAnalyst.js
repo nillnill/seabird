@@ -81,8 +81,7 @@ async function runCommodityAnalyst() {
       model: 'claude-haiku-4-5',
     });
 
-    const allowed = ['INFO', 'WARNING', 'CRITICAL'];
-    const severity = allowed.includes(result.severity) ? result.severity : 'INFO';
+    const severity = 'INFO'; // severity 판단은 MASTER_AGENT 전담 — 사실(가격·data_points)만 보고
 
     const { error } = await db.from('agent_reports').insert({
       agent_id: 'COMMODITY_ANALYST',

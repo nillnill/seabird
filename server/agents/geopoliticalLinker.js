@@ -2,7 +2,7 @@ const { createClient } = require('@supabase/supabase-js');
 const fetch = require('node-fetch');
 const { callClaude } = require('./claudeClient');
 
-const POLL_INTERVAL_MS = 15 * 60 * 1000;
+const POLL_INTERVAL_MS = 60 * 60 * 1000;  // 1시간 (전 에이전트 1시간 배치로 통일)
 const NEWS_KEYWORDS = 'strait OR canal OR shipping OR sanctions OR port OR tanker OR blockade OR attack';
 
 const SYSTEM_PROMPT = `You are GEOPOLITICAL LINKER, a maritime geopolitical intelligence agent.
@@ -130,7 +130,8 @@ async function runGeopoliticalLinker() {
 
     const { error } = await db.from('agent_reports').insert({
       agent_id: 'GEOPOLITICAL_LINKER',
-      severity: result.severity,
+      severity: 'INFO', // severity 판단은 MASTER_AGENT 전담 — 사실만 보고
+
       title: result.title,
       summary: result.summary,
       detail: result.detail,

@@ -1,7 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { callClaude } = require('./claudeClient');
 
-const POLL_INTERVAL_MS = 30 * 60 * 1000;  // 30분
+const POLL_INTERVAL_MS = 60 * 60 * 1000;  // 1시간 (전 에이전트 1시간 배치로 통일)
 
 // 감시 지점: 초크포인트 7곳 + 태풍·사이클론 다발 해역 6곳
 const WEATHER_POINTS = [
@@ -130,7 +130,8 @@ async function runWeatherAgent() {
 
     const { error } = await db.from('agent_reports').insert({
       agent_id: 'WEATHER_AGENT',
-      severity: overall,
+      severity: 'INFO', // 보고 severity는 MASTER_AGENT 전담. 단, raw_data.points의 기상 등급(돌풍·🌀)은 마커용 사실 데이터라 유지
+
       title: (result.title ?? '해상 기상 현황').slice(0, 60),
       summary: (result.summary ?? `13개 감시 해역 — 주의 ${notable.length}곳`).slice(0, 120),
       detail: result.detail ?? '',
