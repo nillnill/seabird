@@ -2,7 +2,7 @@ import { useState } from 'react';
 import useStore from '../store/useStore.js';
 
 // 지역 캐릭터 아바타 — 이미지 실패 시 심볼/국기 이모지로 fallback
-function CharAvatar({ character, dim = 'w-7 h-7' }) {
+function CharAvatar({ character, dim = 'w-10 h-10' }) {
   const [err, setErr] = useState(false);
   if (err || !character.image) {
     return (
@@ -55,10 +55,26 @@ function DataPointChip({ dp }) {
 }
 
 export default function ReportCard({ report, onClick }) {
-  const { focusMap } = useStore();
+  const { focusMap, setSelectedRegion } = useStore();
   const sev = SEVERITY_CONFIG[report.severity] ?? SEVERITY_CONFIG.INFO;
   const agent = AGENT_CONFIG[report.agent_id] ?? { icon: '📡', label: report.agent_id };
   const character = report.raw_data?.character;
+
+  // 항구·초크포인트 보고면 "지도에서 →"가 해당 지역을 선택(패널 오픈 + 맵 센터링)
+  const rd = report.raw_data ?? {};
+  const regionId = rd.port_id || rd.cp_id || report.location?.chokepoint_id || null;
+  const regionType = rd.port_id ? 'port' : (rd.cp_id || report.location?.chokepoint_id) ? 'chokepoint' : null;
+  const regionName = rd.port_name || rd.cp_name || character?.region;
+  const canOpenRegion = regionId && regionType && report.location?.lat != null;
+
+  function goToMap(e) {
+    e.stopPropagation();
+    if (canOpenRegion) {
+      setSelectedRegion({ id: regionId, name: regionName, type: regionType, lat: report.location.lat, lng: report.location.lng });
+    } else if (report.location?.lat != null) {
+      focusMap(report.location.lat, report.location.lng, report.location.zoom ?? 7);
+    }
+  }
   const borderColor = sev.borderColor;
   const bgColor = sev.bgColor;
 
@@ -117,15 +133,12 @@ export default function ReportCard({ report, onClick }) {
         >
           상세보기
         </button>
-        {report.location?.lat && (
+        {report.location?.lat != null && (
           <button
             className="text-[10px] px-2 py-1 rounded border border-sea-border text-sea-muted hover:text-white hover:border-white/30 transition-colors"
-            onClick={(e) => {
-              e.stopPropagation();
-              focusMap(report.location.lat, report.location.lng, report.location.zoom ?? 7);
-            }}
+            onClick={goToMap}
           >
-            지도에서 →
+            {canOpenRegion ? '지역 보기 →' : '지도에서 →'}
           </button>
         )}
       </div>

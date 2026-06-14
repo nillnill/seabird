@@ -1,19 +1,20 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import useStore from '../store/useStore.js';
 
 function CharAvatar({ character }) {
   const [err, setErr] = useState(false);
   if (err || !character.image) {
     return (
-      <span className="w-10 h-10 shrink-0 flex items-center justify-center rounded-full bg-sea-bg text-lg">
+      <span className="w-14 h-14 shrink-0 flex items-center justify-center rounded-full bg-sea-bg text-2xl ring-1 ring-white/10">
         {character.symbolEmoji ?? character.flagEmoji ?? '⚓'}
       </span>
     );
   }
   return (
     <img src={character.image} alt={character.name} onError={() => setErr(true)}
-      className="w-10 h-10 shrink-0 rounded-full object-cover bg-sea-bg" />
+      className="w-14 h-14 shrink-0 rounded-full object-cover bg-sea-bg ring-1 ring-white/10" />
   );
 }
 
@@ -71,6 +72,23 @@ export default function ReportModal({ report, onClose }) {
   const kst = new Date(report.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
   const character = report.raw_data?.character;
 
+  const setSelectedRegion = useStore((s) => s.setSelectedRegion);
+  const rd = report.raw_data ?? {};
+  const regionId = rd.port_id || rd.cp_id || report.location?.chokepoint_id || null;
+  const regionType = rd.port_id ? 'port' : (rd.cp_id || report.location?.chokepoint_id) ? 'chokepoint' : null;
+  const canOpenRegion = regionId && regionType && report.location?.lat != null;
+
+  function openRegion() {
+    setSelectedRegion({
+      id: regionId,
+      name: rd.port_name || rd.cp_name || character?.region,
+      type: regionType,
+      lat: report.location.lat,
+      lng: report.location.lng,
+    });
+    onClose();
+  }
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
@@ -97,12 +115,22 @@ export default function ReportModal({ report, onClose }) {
               {report.summary && <p className="text-xs text-sea-muted leading-snug">{report.summary}</p>}
             </div>
           </div>
-          <button
-            className="text-sea-muted hover:text-white transition-colors ml-4 shrink-0 text-lg leading-none"
-            onClick={onClose}
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2 ml-4 shrink-0">
+            {canOpenRegion && (
+              <button
+                className="text-[11px] px-2.5 py-1 rounded border border-blue-500/50 text-blue-300 hover:bg-blue-900/30 transition-colors whitespace-nowrap"
+                onClick={openRegion}
+              >
+                지역 상세 보기 →
+              </button>
+            )}
+            <button
+              className="text-sea-muted hover:text-white transition-colors text-lg leading-none"
+              onClick={onClose}
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* 본문 */}
