@@ -1,26 +1,20 @@
 const { createClient } = require('@supabase/supabase-js');
 const { callClaude } = require('./claudeClient');
 const { resolveBaseline } = require('./baselineUtils');
+const { REGION_CHARACTERS } = require('../data/regionCharacters');
 
-const POLL_INTERVAL_MS = 10 * 60 * 1000;
+// 각 항구의 대표 캐릭터가 1시간에 한 번 자기 항구의 '현재 운영 상황'을 1인칭으로 보고한다.
+// (과거: 30개 항만을 한 보고로 묶어 분석. 지금: 항구별 캐릭터 보고 = 항구별 agent_reports 행)
+const POLL_INTERVAL_MS = 60 * 60 * 1000;        // 1시간
+const REPORT_TTL_MS = 50 * 60 * 1000;           // 50분 내 이미 보고한 항구는 skip (재시작 중복 방지)
+const CLAUDE_CONCURRENCY = 5;                    // 동시 호출 제한 (rate limit 보호)
 
-const DEDUP_WINDOWS = {
-  CRITICAL: 5 * 60 * 1000,
-  WARNING:  8 * 60 * 1000,
-  INFO:    15 * 60 * 1000,
-};
-
-// waiting_ships(반경 내 ≤2kn 선박 수) 평년 기준값.
-// 2026-06 baselines 실측(0 스냅샷 제외) 중앙값으로 재보정 — 과거 값은 집계 방식(수백 척)보다
-// 10~25배 낮아 패널·편차 보드가 +1000% 이상으로 과장됐다. ※ 동적 평년(resolveBaselineStats,
-// n≥48·24h)이 쌓이면 이 값은 폴백으로만 쓰임. 미측정 항만은 AIS 커버리지 공백으로 ≤2kn 선박이
-// 거의 안 잡혀(편차 보드 미노출), 규모 기반 보수적 추정치를 둔다.
+// waiting_ships(반경 내 ≤2kn 선박 수) 평년 기준값 — 2026-06 baselines 실측 중앙값으로 재보정.
+// 동적 평년(resolveBaseline, n≥48·24h)이 쌓이면 폴백으로만 쓰임.
 const HARDCODED_BASELINE = {
-  // ── 실측 중앙값 (관측 표본 충분) ──
   rotterdam: 880, antwerp: 410, singapore: 385, hamburg: 315, busan: 250,
   tanjung_pelepas: 175, jakarta: 170, hongkong: 125, la_lb: 120, shenzhen: 95,
   newyork: 85, incheon: 85, guangzhou: 46, savannah: 33, yokohama: 30,
-  // ── 미측정(커버리지 공백) — 규모 기반 추정 ──
   shanghai: 150, ningbo: 90, portklang: 90, qingdao: 70, tianjin: 60,
   kaohsiung: 50, dubai: 40, mumbai: 40, xiamen: 40, laem_chabang: 35,
   hochiminhcity: 35, colombo: 30, gwangyang: 20, kobe: 15, vladivostok: 12,
@@ -59,30 +53,23 @@ const PORTS = [
   { id: 'hochiminhcity',   name: '호치민항',         lat: 10.76,   lng: 106.70,    radius_nm: 20 },
 ];
 
-const SYSTEM_PROMPT = `You are PORT ANALYST, a maritime intelligence agent for global port congestion monitoring.
+const SYSTEM_PROMPT = `당신은 한 항구를 대표하는 역사적 인물입니다. 당신의 항구의 '지금 이 순간 운영 상황'을 1인칭으로 보고하세요.
 
-Respond ONLY with valid JSON. Language: Korean. 개조식 마크다운 형식 필수.
+규칙:
+- 당신(캐릭터)의 말투·기개·정체성을 살리되, 보고 내용은 반드시 제공된 실시간 통계에 근거합니다.
+- 역사 강의·과거 회상 금지. 지금 항구가 붐비는지/한산한지, 어떤 선종이 드나드는지, 평년 대비 어떤지를 전하세요.
+- 수치를 자연스럽게 인용하되 과장하지 마세요. 데이터가 적으면 "오늘은 관측이 한산하다"처럼 솔직하게.
+- ⚠️ slow_ships는 항만권 내 저속(≤2kn) 선박 수로 정박·계류 선박까지 포함하는 '현재 머무는 선박' 수치이지 순수 대기열이 아닙니다. "며칠을 기다린다", "예상 대기 N시간" 같은 단정은 금지하고, 평년 대비 붐비는 정도로만 표현하세요.
 
+Respond ONLY with valid JSON. Language: Korean. detail은 개조식 마크다운.
 {
-  "severity": "INFO|WARNING|CRITICAL",
-  "title": "[항만 현황 제목 — 이상 있으면 항만명 포함]",
-  "summary": "전체 항만 현황 핵심 요약 (최대 80자). 이상 없으면 '30개 모니터링 항만 정상 운영 중' 형식.",
-  "detail": "## 📊 항만 현황 (30개 모니터링)\\n\\n| 항만 | 대기 | 평년 | 변화 | 상태 |\\n|------|------|------|------|------|\\n| 부산항 | 8척 | 12척 | -33% | 🟢 정상 |\\n| 로테르담항 | 835척 | 35척 | +2,286% | 🔴 CRITICAL |\\n\\n## ⚠️ 이상 감지\\n- **항만명** — 상세 이상 내용\\n\\n## 🇰🇷 한국 공급망 시사점\\n- 영향 및 권고사항",
-  "ai_comment": "운영 시사점 (최대 200자)",
-  "data_points": [
-    {"label": "모니터링 항만", "current": 8, "baseline": 8, "unit": "개", "change_pct": 0, "direction": "STABLE"},
-    {"label": "대기 급증 항만", "current": 0, "baseline": 0, "unit": "개", "change_pct": 0, "direction": "STABLE"}
-  ]
-}
-
-SEVERITY: CRITICAL = +60% 이상 또는 대기 12h+, WARNING = +40% 이상 또는 6h+, INFO = 이상 없음.
-이상 없을 때 detail의 이상 감지 섹션: "- 이상 없음 — 30개 항만 정상 운영 중"
-데이터가 적어도(테스트/초기 환경) 반드시 분석 의견 제공.`;
+  "title": "한 줄 상황 보고 (항구명 포함, 캐릭터 톤). 예: '부산항, 새벽부터 분주하다 — 평년보다 붐벼'",
+  "summary": "1인칭 핵심 요약 (최대 70자)",
+  "detail": "## ⚓ 현재 상황\\n- 대기·혼잡 현황 (수치 인용)\\n\\n## 🚢 입출항 동향\\n- 선종 분포·특이사항\\n\\n## 🗣️ 한마디\\n> 캐릭터의 1인칭 코멘트",
+  "ai_comment": "운영/공급망 시사점 (최대 120자, 1인칭 가능)"
+}`;
 
 function nmToDeg(nm) { return nm / 60; }
-
-// 인메모리 dedup 캐시
-let _lastReport = null;  // { severity, triggered, ts }
 
 let _supabase = null;
 function getDb() {
@@ -101,99 +88,127 @@ async function queryPortShips(port) {
   return data ?? [];
 }
 
+// 항구별 결정적 통계 (Claude 미사용)
+// ※ waiting = 항만권 내 저속(≤2kn) 선박 수로 정박·계류 포함(순수 대기열 아님). 평년(avg90d)도 같은
+//   모집단이라, severity는 절대 수가 아니라 '평년 대비 편차'로만 판단한다(대형항 상시 CRITICAL 방지).
+async function collectPortStats(port, db) {
+  const ships = await queryPortShips(port);
+  const waiting = ships.filter(s => (s.speed ?? 0) <= 2.0).length;
+  const avg90d = await resolveBaseline(db, port.id, 'waiting_ships', HARDCODED_BASELINE[port.id] ?? 10);
+  const changePct = avg90d > 0 ? Math.round(((waiting - avg90d) / avg90d) * 100) : 0;
+
+  const typeDist = {};
+  ships.forEach(s => { const t = s.vessel_type || 'Other'; typeDist[t] = (typeDist[t] || 0) + 1; });
+
+  const severity = changePct >= 60 ? 'CRITICAL' : changePct >= 30 ? 'WARNING' : 'INFO';
+
+  return { port, total: ships.length, waiting, avg90d, changePct, typeDist, severity };
+}
+
+// 동시성 제한 map
+async function mapLimit(items, limit, fn) {
+  const out = [];
+  for (let i = 0; i < items.length; i += limit) {
+    out.push(...await Promise.all(items.slice(i, i + limit).map(fn)));
+  }
+  return out;
+}
+
+// 한 항구의 캐릭터 보고 생성 + 저장
+async function reportPort(stat, db) {
+  const { port } = stat;
+  const char = REGION_CHARACTERS[port.id];
+  const dir = stat.changePct > 5 ? 'UP' : stat.changePct < -5 ? 'DOWN' : 'STABLE';
+
+  let result;
+  try {
+    result = await callClaude({
+      systemPrompt: SYSTEM_PROMPT,
+      userMessage: JSON.stringify({
+        character: char
+          ? { name: char.name, title: char.title, quote: char.quote, role: char.role, top_cargoes: char.topCargoes }
+          : { name: `${port.name} 항만관제`, title: '항만 운영', role: '' },
+        port: port.name,
+        live: {
+          ships_in_area: stat.total,
+          slow_ships: stat.waiting,                 // ≤2kn — 정박·계류 포함, 순수 대기열 아님
+          baseline_slow_ships: stat.avg90d,
+          change_pct_vs_baseline: stat.changePct,
+          vessel_type_dist: stat.typeDist,
+        },
+        expected_severity: stat.severity,
+      }),
+      maxTokens: 1400,
+      model: 'claude-haiku-4-5',
+    });
+  } catch (err) {
+    console.error(`[PORT_ANALYST] ${port.id} claude error:`, err.message);
+    return false;
+  }
+
+  const dataPoints = [
+    { label: port.name, current: stat.waiting, baseline: stat.avg90d, unit: '척', change_pct: stat.changePct, direction: dir },
+  ];
+
+  const { error } = await db.from('agent_reports').insert({
+    agent_id: 'PORT_ANALYST',
+    severity: stat.severity,
+    title: result.title,
+    summary: result.summary,
+    detail: result.detail,
+    data_points: dataPoints,
+    annotations: [result.ai_comment].filter(Boolean),
+    related_mmsi: [],
+    location: { lat: port.lat, lng: port.lng, zoom: 8 },
+    raw_data: {
+      port_id: port.id,
+      port_name: port.name,
+      waiting: stat.waiting,
+      baseline: stat.avg90d,
+      change_pct: stat.changePct,
+      character: char
+        ? { name: char.name, title: char.title, image: char.image, symbolEmoji: char.symbolEmoji, flagEmoji: char.flagEmoji, region: port.name }
+        : null,
+    },
+  });
+  if (error) {
+    console.error(`[PORT_ANALYST] ${port.id} insert error:`, error.message);
+    return false;
+  }
+  console.log(`[PORT_ANALYST] ${port.id} (${char?.name ?? '?'}) report saved:`, stat.severity);
+  return true;
+}
+
 async function runPortAnalyst() {
   console.log('[PORT_ANALYST] run at', new Date().toISOString());
   const db = getDb();
 
-  const portDataArr = await Promise.all(PORTS.map(async (port) => {
-    const ships = await queryPortShips(port);
-    const waitingShips = ships.filter(s => (s.speed ?? 0) <= 2.0);
+  // 1) 항구별 통계 수집
+  const stats = await mapLimit(PORTS, 8, (port) => collectPortStats(port, db));
 
-    // 평년: 충분한 실측 이력이 쌓이면 동적 평균, 그 전엔 하드코딩 기준값 (baselineUtils 공유 정책)
-    const avg90d = await resolveBaseline(db, port.id, 'waiting_ships', HARDCODED_BASELINE[port.id] ?? 10);
-    const changePct = avg90d > 0 ? Math.round(((waitingShips.length - avg90d) / avg90d) * 100) : 0;
-    const waitHours = waitingShips.length * 0.5;
+  // 2) 실시간 데이터 있는 항구만 보고 (커버리지 공백 0척은 거짓 보고 방지 위해 skip)
+  let targets = stats.filter(s => s.total > 0);
 
-    // 선종 분포
-    const typeDist = {};
-    ships.forEach(s => { const t = s.vessel_type || 'Other'; typeDist[t] = (typeDist[t] || 0) + 1; });
+  // 3) 재시작 중복 방지 — 최근 50분 내 보고한 항구 제외
+  const since = new Date(Date.now() - REPORT_TTL_MS).toISOString();
+  const { data: recent } = await db
+    .from('agent_reports')
+    .select('raw_data, created_at')
+    .eq('agent_id', 'PORT_ANALYST')
+    .gte('created_at', since);
+  const recentIds = new Set((recent ?? []).map(r => r.raw_data?.port_id).filter(Boolean));
+  const skipped = targets.filter(s => recentIds.has(s.port.id)).length;
+  targets = targets.filter(s => !recentIds.has(s.port.id));
 
-    return {
-      port: port.name,
-      portId: port.id,
-      portLat: port.lat,
-      portLng: port.lng,
-      total_ships: ships.length,
-      waiting: waitingShips.length,
-      avg90d,
-      change_pct: changePct,
-      est_wait_hours: waitHours,
-      vessel_type_dist: typeDist,
-      triggered: waitingShips.length > avg90d * 1.4 || waitHours > 6,
-    };
-  }));
-
-  const triggeredPorts = portDataArr.filter(d => d.triggered);
-  const severity = triggeredPorts.some(d => d.est_wait_hours > 12 || d.change_pct >= 60) ? 'CRITICAL'
-    : triggeredPorts.length > 0 ? 'WARNING'
-    : 'INFO';
-
-  // 인메모리 dedup 확인
-  if (_lastReport && _lastReport.severity === severity && _lastReport.triggered === triggeredPorts.length) {
-    const age = Date.now() - _lastReport.ts;
-    const window = DEDUP_WINDOWS[severity] ?? DEDUP_WINDOWS.INFO;
-    if (age < window) {
-      console.log('[PORT_ANALYST] dedup skip —', severity, `(${Math.round(age/60000)}min/${Math.round(window/60000)}min)`);
-      return;
-    }
+  if (targets.length === 0) {
+    console.log(`[PORT_ANALYST] 보고 대상 없음 (데이터 0척 또는 최근 보고 ${skipped}건)`);
+    return;
   }
+  console.log(`[PORT_ANALYST] 보고 대상 ${targets.length}개 항구 (skip ${skipped})`);
 
-  const focusPort = triggeredPorts[0] ?? portDataArr.reduce((a, b) => a.total_ships > b.total_ships ? a : b);
-
-  try {
-    const result = await callClaude({
-      systemPrompt: SYSTEM_PROMPT,
-      userMessage: JSON.stringify({
-        analysis_time: new Date().toISOString(),
-        ports: portDataArr.map(d => ({
-          port: d.port,
-          total_ships: d.total_ships,
-          waiting: d.waiting,
-          avg_90d: d.avg90d,
-          change_pct: d.change_pct,
-          est_wait_hours: d.est_wait_hours,
-          vessel_type_dist: d.vessel_type_dist,
-          triggered: d.triggered,
-        })),
-        triggered_count: triggeredPorts.length,
-        expected_severity: severity,
-      }),
-      maxTokens: 4000,  // 30개 항만 마크다운 표 + 분석 → truncation 방지
-      model: 'claude-haiku-4-5',
-    });
-
-    const { error } = await db.from('agent_reports').insert({
-      agent_id: 'PORT_ANALYST',
-      severity: result.severity ?? severity,
-      title: result.title,
-      summary: result.summary,
-      detail: result.detail,
-      data_points: result.data_points ?? [],
-      annotations: [result.ai_comment].filter(Boolean),
-      related_mmsi: [],
-      location: { lat: focusPort.portLat, lng: focusPort.portLng, zoom: 8 },
-      raw_data: { ports: portDataArr.length, triggered: triggeredPorts.length },
-    });
-    if (error) {
-      console.error('[PORT_ANALYST] insert error:', error.message);
-    } else {
-      const finalSeverity = result.severity ?? severity;
-      console.log('[PORT_ANALYST] report saved:', finalSeverity);
-      _lastReport = { severity: finalSeverity, triggered: triggeredPorts.length, ts: Date.now() };
-    }
-  } catch (err) {
-    console.error('[PORT_ANALYST] error:', err.message);
-  }
+  // 4) 항구별 캐릭터 보고 (동시성 제한)
+  const results = await mapLimit(targets, CLAUDE_CONCURRENCY, (s) => reportPort(s, db));
+  console.log(`[PORT_ANALYST] 완료 — ${results.filter(Boolean).length}/${targets.length} 저장`);
 }
 
 function startPortAnalyst() {
@@ -201,4 +216,4 @@ function startPortAnalyst() {
   return setInterval(runPortAnalyst, POLL_INTERVAL_MS);
 }
 
-module.exports = { runPortAnalyst, startPortAnalyst, PORTS, HARDCODED_BASELINE };
+module.exports = { runPortAnalyst, startPortAnalyst, PORTS, HARDCODED_BASELINE, getDb, collectPortStats, reportPort };

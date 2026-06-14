@@ -44,7 +44,8 @@ seabird/
 │   ※ image-asset/  ← AI 생성 원본 PNG(1024px, 투명 배경 RGBA). git 제외. scripts/optimize_characters.py로 public/characters/*.webp 생성(알파 보존)
 │
 ├── scripts/
-│   └── generate_character_excel.cjs  ← 캐릭터 엑셀 재생성 스크립트
+│   ├── generate_character_excel.cjs  ← 캐릭터 엑셀 재생성 스크립트
+│   └── generate_region_characters.cjs ← regionData.js(ESM)에서 캐릭터 페르소나만 추출 → server/data/regionCharacters.js(CJS) 미러 생성 (history 제외)
 │
 ├── server/
 │   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/baseline-history + /api/change-windows + /api/inflow-windows + /api/comparison-board + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작 (통계 GET 60초 캐시·comparison-board 단일쿼리)
@@ -54,8 +55,8 @@ seabird/
 │   │   ├── claudeClient.js    ← Node.js 전용 Claude API 래퍼
 │   │   ├── baselineUtils.js   ← 평년(baseline) 산출 공유 정책 resolveBaseline()/resolveBaselineStats(mean·std·n·latest·series) — 항만·초크포인트 공용
 │   │   ├── trafficAggregator.js ← 항만·초크포인트 실시간 집계 공유 모듈 aggregatePort()/aggregateChokepoint() — 선종·기국·목적지·입출항(선종별)·원자재 유입 추정(estLadenTons). port-stats·chokepoint-stats·baselinesWriter 공용
-│   │   ├── portAnalyst.js     ← 10분 폴링, Haiku, 30개 항만 combined
-│   │   ├── chokepointWatcher.js ← 5분 폴링, Haiku, 7개 초크포인트 combined
+│   │   ├── portAnalyst.js     ← 60분 폴링, Haiku, 항구별 대표 캐릭터가 1인칭으로 자기 항구 현재 상황 보고(항구당 1행). 데이터 있는 항구만(0척 skip), 재시작 중복 방지(최근 50분 내 skip), 동시성 5
+│   │   ├── chokepointWatcher.js ← 60분 폴링, Haiku, 초크포인트별 대표 캐릭터 1인칭 통항 보고(초크포인트당 1행). 0척 skip(거짓 CRITICAL 방지), raw_data.cp_id·change_pct·location.chokepoint_id 보존(마커·StatusBar 소비)
 │   │   ├── geopoliticalLinker.js ← 15분 폴링, Sonnet, Perplexity 영문검색 → 한국어 번역
 │   │   ├── masterAgent.js     ← 10분 폴링, Sonnet, 전체 종합 보고
 │   │   ├── weatherAgent.js    ← 30분 폴링, Haiku, Open-Meteo 13개 해역 날씨 → 이모지 마커
@@ -65,7 +66,8 @@ seabird/
 │   └── data/
 │       ├── tradePairs.js      ← 15개 교역 쌍 + 계절 인덱스 (CommonJS)
 │       ├── flag.js            ← MID_TO_FLAG(MMSI MID→ISO3)·mmsiToFlag 단일 소스 (index.js·trafficAggregator 공용)
-│       └── destinationNormalizer.js ← destination 정규화 (src/utils/ ESM에서 자동 생성된 CJS 미러)
+│       ├── destinationNormalizer.js ← destination 정규화 (src/utils/ ESM에서 자동 생성된 CJS 미러)
+│       └── regionCharacters.js ← 지역 캐릭터 페르소나 CJS 미러 (regionData.js에서 자동 생성, history 제외 — name·title·quote·role·image). portAnalyst·chokepointWatcher가 1인칭 보고에 사용
 │
 └── src/
     ├── main.jsx
@@ -84,12 +86,13 @@ seabird/
     │   ├── WeatherMarker.jsx  ← 날씨 이모지 마커 13개 해역 (WEATHER_AGENT raw_data.points 연동)
     │   ├── Sparkline.jsx      ← 경량 SVG 스파크라인 (baselines 시계열 추이 + 평년 기준선, Recharts 없이 인라인). RegionIntelPanel 현황 탭 추이 카드에 사용
     │   ├── RegionIntelPanel.jsx ← 지역 인텔 모달 (Civ7 스타일, 탭: 현황/[선박 동향(항만 전용)]/역사/뉴스, 캐릭터 이미지 지원). 현황=상태 세분화(정박/대기/기동/항행)+평년 게이지+**최근 추이(24h 스파크라인·추세·z-score, /api/baseline-history)**+**증감 윈도우(ChangeWindows: DoD/WoW/MoM/YoY, /api/change-windows — baselines에서 최근24h vs N일전 24h 비교, 이력 없는 윈도우는 '누적 중', WoW↑만 규칙기반 해석·DoD 해석 생략)**, 선박 동향=입출항 추정·**원자재 유입 추정(CommodityInflow: 원유·건화물·컨테이너·LNG)+유입 증감 매트릭스(InflowChangeMatrix: 품목×DoD/WoW/MoM/YoY, /api/inflow-windows — traffic_snapshots 기반)**·선종·기국·목적지 분포
-    │   ├── CommandFeed.jsx    ← 오른쪽 패널 전체
+    │   ├── CommandFeed.jsx    ← 오른쪽 패널 전체. 카테고리 탭(FeedTabs)으로 보고를 분류해 표시. base(심각도·기간 필터)→탭별 건수 배지 계산→활성 탭(feedTab)으로 최종 필터
+    │   ├── FeedTabs.jsx       ← 카테고리 탭 바 (전체/항구/초크포인트/원자재/날씨/지역/화물). TABS = 탭↔에이전트 매핑 단일 소스(agents:null=전체). reportInTab()으로 보고 분류. 원자재=COMMODITY+FLOW, 지역=GEOPOLITICAL, MASTER_AGENT는 전체 탭에만
     │   ├── CommanderInput.jsx ← 자연어 입력창
     │   ├── ReportCard.jsx     ← 에이전트 보고 카드 (MASTER_AGENT: 보라색)
     │   ├── ReportModal.jsx    ← 상세 보기 모달 (react-markdown + **remark-gfm** → GFM 표 렌더, Notion 스타일 커스텀 components: 테두리 표·여백 제목·리스트. ※ remark-gfm 없으면 표가 깨지고, prose 클래스는 typography 플러그인 미설치라 무효 — 그래서 커스텀 렌더러 사용)
     │   ├── ShipDetailPanel.jsx ← 선박 클릭 상세 (좌측 떠 있는 카드, 캐릭터 헤더 + 3탭: 현황/화물추정/항적). 선택 시 Supabase ships 전체 행 보강(dbShip) → 지도 피처(Other)보다 우선해 **캐릭터·선종·색상 일관성** 확보. 현황 탭: 항행상태 배지(nav_status 우선, 없으면 속력 추정) + 데이터 기반 캐릭터 브리핑(buildNarration: 목적지+선종+속력+상태+ETA) + 목적지(normalizeDestination+17k LOCODE_MAP로 "대만 / 가오슝"식)·흘수·DWT·침로·갱신시각. 항적 탭 fetch가 setShipTrack → MapView 경로 시각화
-    │   ├── FeedFilter.jsx     ← 에이전트별 필터 토글
+    │   ├── FeedFilter.jsx     ← 심각도(CRITICAL/WARNING/INFO)·기간(1h~7d) 필터 (에이전트 토글은 FeedTabs로 이동)
     │   ├── StatusBar.jsx      ← 상단 상태 표시줄 (📊 통계 대시보드 토글 버튼)
     │   ├── StatsDashboard.jsx ← 통계 대시보드 모달 (Recharts, 10개 섹션 — 평년 대비 편차 보드 포함, /api/comparison-board)
     │   └── IntroPage.jsx      ← 인트로 오버레이 (문명 게임 스타일, 맬컴 맥린 지도자 + 챕터형 4막: 지도자/역사 기술트리/능력/팁). 첫 방문 자동 1회(localStorage `seabird_intro_seen_v1`) + GNB 📜 인트로 버튼. 이미지 emoji fallback. 콘텐츠는 introContent.js
@@ -122,8 +125,8 @@ seabird/
 
 ```
 Node.js 서버 (server/index.js)
-    ├─ agents/portAnalyst.js      (10분, Haiku)  ─┐
-    ├─ agents/chokepointWatcher.js (5분, Haiku)   ├─ Supabase INSERT
+    ├─ agents/portAnalyst.js      (60분, Haiku)  ─┐  ← 항구별 캐릭터 1인칭
+    ├─ agents/chokepointWatcher.js (60분, Haiku)  ├─ Supabase INSERT  ← 초크포인트별 캐릭터 1인칭
     ├─ agents/geopoliticalLinker.js(15분, Sonnet)  │   agent_reports
     ├─ agents/masterAgent.js       (10분, Sonnet)  │
     ├─ agents/weatherAgent.js      (30분, Haiku)   │  ← Open-Meteo 13개 해역
@@ -190,8 +193,8 @@ Node.js 서버 (포트 3001)
 
 | 에이전트 | 파일 | 모델 | 트리거 | 동작 |
 |----------|------|------|--------|------|
-| PORT ANALYST | `server/agents/portAnalyst.js` | claude-haiku-4-5 | 10분 폴링 | 30개 항만 combined, 항상 보고 |
-| CHOKEPOINT WATCHER | `server/agents/chokepointWatcher.js` | claude-haiku-4-5 | 5분 폴링 | 7개 초크포인트를 **단일 호출**로 묶어 분석(reports 배열) → 초크포인트별 보고 행 저장. dedup 통과분만 분석, 전부 dedup 시 호출 0회 |
+| PORT ANALYST | `server/agents/portAnalyst.js` | claude-haiku-4-5 | 60분 폴링 | **항구별** 대표 캐릭터가 1인칭으로 자기 항구의 현재 운영 상황 보고(항구당 호출 1회·행 1건). 실시간 데이터 있는 항구만(0척 skip), 최근 50분 보고 시 skip(재시작 중복 방지), Claude 동시성 5 |
+| CHOKEPOINT WATCHER | `server/agents/chokepointWatcher.js` | claude-haiku-4-5 | 60분 폴링 | **초크포인트별** 대표 캐릭터가 1인칭으로 통항 상황 보고(초크포인트당 행 1건). 0척 skip(거짓 CRITICAL 방지). `raw_data.cp_id`·`change_pct`·`location.chokepoint_id` 보존(마커·StatusBar 칩 소비) |
 | GEOPOLITICAL LINKER | `server/agents/geopoliticalLinker.js` | claude-sonnet-4-6 | 15분 폴링 | Perplexity 영문검색 → Claude 한국어 번역 |
 | MASTER AGENT | `server/agents/masterAgent.js` | claude-sonnet-4-6 | 10분 폴링 | 전체 종합, 긴급 시 에이전트 재실행 |
 | WEATHER AGENT | `server/agents/weatherAgent.js` | claude-haiku-4-5 | 30분 폴링 | Open-Meteo로 13개 해역 날씨 수집 → 이모지·심각도 마커 + 악천후 보고. 항상 보고 |
@@ -209,7 +212,7 @@ Node.js 서버 (포트 3001)
 - 6000ms: COMMODITY ANALYST
 - 6500ms: FLOW REPORTER (내부적으로 시작 +20s 후 1회 실행)
 
-> 새 에이전트 추가 체크리스트: ① `server/agents/<name>.js` (run/start export) → ② `server/index.js` import + setTimeout stagger → ③ 프론트 3곳 등록: `FeedFilter.jsx` AGENT_OPTIONS, `ReportCard.jsx` AGENT_CONFIG, `useStore.js` feedFilters.agents 기본값.
+> 새 에이전트 추가 체크리스트: ① `server/agents/<name>.js` (run/start export) → ② `server/index.js` import + setTimeout stagger → ③ 프론트 2곳 등록: `FeedTabs.jsx` TABS(해당 카테고리 탭의 agents 배열에 추가), `ReportCard.jsx` AGENT_CONFIG(아이콘·라벨). (전체 탭은 agents:null이라 자동 포함. 새 카테고리가 필요하면 TABS에 탭 객체를 추가.)
 
 ### 날씨 이모지 마커
 WEATHER_AGENT는 13개 해역(초크포인트 7 + 태풍다발 해역 6)의 Open-Meteo 현재 날씨를 WMO 코드→이모지, 돌풍(m/s)→심각도(INFO/WARNING/CRITICAL)로 변환해 `raw_data.points`에 담아 보고. 폭풍급 돌풍(≥28m/s)은 🌀로 강조. 프론트는 `useAgentReports`가 최신 WEATHER_AGENT 보고의 points를 `setWeatherMarkers()`로 store에 넣고, `WeatherMarkers` 클래스(mapboxgl.Marker)가 지도에 렌더. Open-Meteo는 **API 키 불필요**.

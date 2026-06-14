@@ -1,5 +1,21 @@
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+
+function CharAvatar({ character }) {
+  const [err, setErr] = useState(false);
+  if (err || !character.image) {
+    return (
+      <span className="w-10 h-10 shrink-0 flex items-center justify-center rounded-full bg-sea-bg text-lg">
+        {character.symbolEmoji ?? character.flagEmoji ?? '⚓'}
+      </span>
+    );
+  }
+  return (
+    <img src={character.image} alt={character.name} onError={() => setErr(true)}
+      className="w-10 h-10 shrink-0 rounded-full object-cover bg-sea-bg" />
+  );
+}
 
 const AGENT_LABELS = {
   PORT_ANALYST:        '🏗️ PORT ANALYST',
@@ -53,6 +69,7 @@ export default function ReportModal({ report, onClose }) {
   if (!report) return null;
 
   const kst = new Date(report.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+  const character = report.raw_data?.character;
 
   return (
     <div
@@ -65,10 +82,20 @@ export default function ReportModal({ report, onClose }) {
       >
         {/* 헤더 */}
         <div className="flex items-start justify-between p-4 border-b border-sea-border shrink-0">
-          <div className="space-y-1 min-w-0">
-            <p className="text-[10px] text-sea-muted font-mono">{AGENT_LABELS[report.agent_id] ?? report.agent_id} · {kst}</p>
-            <h2 className="text-base font-bold text-white leading-tight">{report.title}</h2>
-            {report.summary && <p className="text-xs text-sea-muted leading-snug">{report.summary}</p>}
+          <div className="flex items-start gap-3 min-w-0">
+            {character && <CharAvatar character={character} />}
+            <div className="space-y-1 min-w-0">
+              {character ? (
+                <p className="text-[10px] text-sea-muted">
+                  <span className="text-white/80 font-semibold">{character.name}</span>
+                  {character.title ? ` · ${character.title}` : ''} · {kst}
+                </p>
+              ) : (
+                <p className="text-[10px] text-sea-muted font-mono">{AGENT_LABELS[report.agent_id] ?? report.agent_id} · {kst}</p>
+              )}
+              <h2 className="text-base font-bold text-white leading-tight">{report.title}</h2>
+              {report.summary && <p className="text-xs text-sea-muted leading-snug">{report.summary}</p>}
+            </div>
           </div>
           <button
             className="text-sea-muted hover:text-white transition-colors ml-4 shrink-0 text-lg leading-none"

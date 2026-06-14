@@ -1,4 +1,25 @@
+import { useState } from 'react';
 import useStore from '../store/useStore.js';
+
+// 지역 캐릭터 아바타 — 이미지 실패 시 심볼/국기 이모지로 fallback
+function CharAvatar({ character, dim = 'w-7 h-7' }) {
+  const [err, setErr] = useState(false);
+  if (err || !character.image) {
+    return (
+      <span className={`${dim} shrink-0 flex items-center justify-center rounded-full bg-sea-bg text-sm`}>
+        {character.symbolEmoji ?? character.flagEmoji ?? '⚓'}
+      </span>
+    );
+  }
+  return (
+    <img
+      src={character.image}
+      alt={character.name}
+      onError={() => setErr(true)}
+      className={`${dim} shrink-0 rounded-full object-cover bg-sea-bg`}
+    />
+  );
+}
 
 const SEVERITY_CONFIG = {
   CRITICAL: { badge: 'CRITICAL', bgColor: 'bg-red-900/20',    borderColor: 'border-red-500/60',    textColor: 'text-red-400' },
@@ -14,6 +35,7 @@ const AGENT_CONFIG = {
   WEATHER_AGENT:       { icon: '🌪️', label: 'WEATHER' },
   COMMODITY_ANALYST:   { icon: '💹', label: 'COMMODITY' },
   FLOW_REPORTER:       { icon: '🛢️', label: 'FLOW' },
+  MASTER_AGENT:        { icon: '🧭', label: 'MASTER' },
 };
 
 function DataPointChip({ dp }) {
@@ -36,6 +58,7 @@ export default function ReportCard({ report, onClick }) {
   const { focusMap } = useStore();
   const sev = SEVERITY_CONFIG[report.severity] ?? SEVERITY_CONFIG.INFO;
   const agent = AGENT_CONFIG[report.agent_id] ?? { icon: '📡', label: report.agent_id };
+  const character = report.raw_data?.character;
   const borderColor = sev.borderColor;
   const bgColor = sev.bgColor;
 
@@ -54,10 +77,20 @@ export default function ReportCard({ report, onClick }) {
     >
       {/* 헤더 */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-sm">{agent.icon}</span>
-          <span className="text-[10px] text-sea-muted font-mono tracking-wide truncate">{agent.label}</span>
-        </div>
+        {character ? (
+          <div className="flex items-center gap-2 min-w-0">
+            <CharAvatar character={character} />
+            <div className="flex flex-col min-w-0 leading-tight">
+              <span className="text-[11px] text-white font-semibold truncate">{character.name}</span>
+              <span className="text-[9px] text-sea-muted truncate">{character.region ?? agent.label}</span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-sm">{agent.icon}</span>
+            <span className="text-[10px] text-sea-muted font-mono tracking-wide truncate">{agent.label}</span>
+          </div>
+        )}
         <div className="flex items-center gap-2 shrink-0">
           <span className={`text-[10px] font-mono font-semibold ${sev.textColor}`}>{sev.badge}</span>
           <span className="text-[10px] text-sea-muted font-mono">{kstTime}</span>

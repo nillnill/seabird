@@ -44,10 +44,11 @@ const useStore = create((set) => ({
   // 피드 상태
   reports: [],
   feedFilters: {
-    agents: ['PORT_ANALYST', 'CHOKEPOINT_WATCHER', 'CARGO_ESTIMATOR', 'GEOPOLITICAL_LINKER', 'WEATHER_AGENT', 'COMMODITY_ANALYST', 'FLOW_REPORTER'],
+    // 에이전트 on/off는 이제 카테고리 탭(feedTab)이 담당 → severities·timeRange만 공통 필터로 유지
     severities: ['INFO', 'WARNING', 'CRITICAL'],
     timeRange: '24h',
   },
+  feedTab: 'all', // 활성 카테고리 탭 (FeedTabs.jsx의 TABS id)
   addReport: (report) =>
     set((state) => {
       // id 중복 무시 (초기 로드 + Realtime + StrictMode 이중 마운트로 같은 보고가 중복 추가되는 것 방지)
@@ -58,6 +59,7 @@ const useStore = create((set) => ({
     set((state) => ({
       feedFilters: { ...state.feedFilters, [key]: value },
     })),
+  setFeedTab: (tab) => set({ feedTab: tab }),
 
   // Commander 상태
   commanderInput: '',
