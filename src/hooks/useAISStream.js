@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
 import useStore from '../store/useStore.js';
-import { mapAISTypeToCategory, mmsiToFlag } from '../utils/aisParser.js';
 import { supabase } from '../utils/supabaseClient.js';
 
 const BUFFER_INTERVAL_MS = 500;
@@ -180,76 +179,35 @@ export function useAISStream(mapRef) {
     ws.onmessage = (event) => {
       try {
         const msg = JSON.parse(event.data);
-        if (msg.MessageType === 'PositionReport') {
-          const m = msg.Message.PositionReport;
-          const heading = m.TrueHeading !== 511 ? m.TrueHeading : m.Cog ?? 0;
-          const navStatus = (m.NavigationStatus != null && m.NavigationStatus !== 15) ? m.NavigationStatus : null;
-          const feature = {
-            type: 'Feature',
-            geometry: { type: 'Point', coordinates: [m.Longitude, m.Latitude] },
-            properties: {
-              mmsi: String(m.UserID),
-              ship_name: '',
-              vessel_type: 'Other',
-              speed: m.Sog ?? 0,
-              heading,
-              nav_status: navStatus,
-              eta: null,
-            },
-          };
-          // 이미 존재하는 선박이면 정적 데이터 유지
-          const existing = shipMapRef.current.get(String(m.UserID));
-          if (existing) {
-            feature.properties.ship_name = existing.properties.ship_name;
-            feature.properties.vessel_type = existing.properties.vessel_type;
-            feature.properties.destination = existing.properties.destination;
-            feature.properties.flag_country = existing.properties.flag_country ?? '';
-          }
-          bufferRef.current.push(feature);
-        } else if (msg.MessageType === 'ExtendedClassBPositionReport') {
-          // Class B 확장 위치 — 위치 + 선종(Type) 동시 제공 (소형선 색상 확보)
-          const m = msg.Message.ExtendedClassBPositionReport;
-          if (m?.Latitude != null && m?.Longitude != null) {
-            const mmsi = String(m.UserID);
-            const th = (m.TrueHeading != null && m.TrueHeading >= 0 && m.TrueHeading <= 359) ? m.TrueHeading : (m.Cog ?? 0);
-            const existing = shipMapRef.current.get(mmsi);
-            const type = m.Type ? mapAISTypeToCategory(m.Type) : (existing?.properties.vessel_type ?? 'Other');
-            shipMapRef.current.set(mmsi, {
-              type: 'Feature',
-              geometry: { type: 'Point', coordinates: [m.Longitude, m.Latitude] },
-              properties: {
-                mmsi,
-                ship_name: m.Name?.trim() || existing?.properties.ship_name || '',
-                vessel_type: type !== 'Other' ? type : (existing?.properties.vessel_type ?? 'Other'),
-                speed: m.Sog ?? 0,
-                heading: th,
-                destination: existing?.properties.destination ?? '',
-                flag_country: mmsiToFlag(mmsi) ?? '',
-                nav_status: null,
-                eta: null,
-              },
-            });
-          }
-        } else if (msg.MessageType === 'ShipStaticData' || msg.MessageType === 'StaticDataReport') {
-          const isClassB = msg.MessageType === 'StaticDataReport';
-          const m = isClassB ? msg.Message.StaticDataReport : msg.Message.ShipStaticData;
-          if (!m) return;
-          const mmsi = String(m.UserID);
+        // 서버가 2초마다 보내는 compact 배치 스냅샷: { type:'snapshot', ships:[{mmsi,lat,lng,...}] }
+        // (과거엔 raw aisstream 메시지를 1건씩 중계 → Render egress 폭증. 이제 변경분만 압축 묶음으로 수신)
+        if (msg.type !== 'snapshot' || !Array.isArray(msg.ships)) return;
+        for (const s of msg.ships) {
+          const mmsi = String(s.mmsi);
           const existing = shipMapRef.current.get(mmsi);
-          if (existing) {
-            const name = isClassB ? m.ReportA?.Name : m.Name;
-            const typeCode = isClassB ? m.ReportB?.ShipType : m.Type;
-            if (name?.trim()) existing.properties.ship_name = name.trim();
-            if (typeCode) { const t = mapAISTypeToCategory(typeCode); if (t !== 'Other') existing.properties.vessel_type = t; }
-            existing.properties.flag_country = mmsiToFlag(mmsi) ?? existing.properties.flag_country ?? '';
-            if (!isClassB) {
-              if (m.Destination?.trim()) existing.properties.destination = m.Destination.trim();
-              if (m.CallSign?.trim()) existing.properties.call_sign = m.CallSign.trim();
-              if (m.ImoNumber) existing.properties.imo = String(m.ImoNumber).replace(/\D/g, '').slice(0, 7);
-              if (m.MaximumStaticDraught) existing.properties.max_draught = m.MaximumStaticDraught;
-              if (m.Eta) existing.properties.eta = m.Eta;
-            }
-          }
+          // 기존 정적 데이터 유지 + 새 값으로 갱신 (없는 필드는 그대로 둠)
+          const props = existing
+            ? { ...existing.properties }
+            : { mmsi, ship_name: '', vessel_type: 'Other', speed: 0, heading: 0,
+                destination: '', flag_country: '', nav_status: null, eta: null };
+          if (s.speed != null) props.speed = s.speed;
+          if (s.heading != null) props.heading = s.heading;
+          if ('nav_status' in s) props.nav_status = s.nav_status;
+          if (s.vessel_type && s.vessel_type !== 'Other') props.vessel_type = s.vessel_type;
+          if (s.ship_name) props.ship_name = s.ship_name;
+          if (s.flag_country) props.flag_country = s.flag_country;
+          if (s.destination) props.destination = s.destination;
+          if (s.eta) props.eta = s.eta;
+
+          const lng = s.lng != null ? s.lng : existing?.geometry.coordinates[0];
+          const lat = s.lat != null ? s.lat : existing?.geometry.coordinates[1];
+          if (lng == null || lat == null) continue;
+
+          bufferRef.current.push({
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [lng, lat] },
+            properties: props,
+          });
         }
       } catch {
         // 파싱 실패는 무시

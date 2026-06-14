@@ -22,6 +22,7 @@ const { TRADE_PAIRS, SEASONAL_INDEX, getSeasonalCategory } = require('./data/tra
 const PORT = process.env.PORT ?? 3001;
 const SUPABASE_BATCH_INTERVAL_MS = 30 * 1000;
 const POSITIONS_FLUSH_INTERVAL_MS = 10 * 1000;  // ship_positions: 10초마다 배치 INSERT
+const RELAY_FLUSH_INTERVAL_MS = 2 * 1000;       // 브라우저 relay: 2초마다 변경분 압축 스냅샷 전송
 const POSITION_STORE_MIN_INTERVAL_MS = 60 * 1000; // 같은 mmsi 위치 이력은 최대 60초당 1건만 저장(쓰기량·테이블 폭증 억제)
 const POSITIONS_TTL_MS = 2 * 3600000;           // ship_positions 보존 2시간(항적 충분), 초과분 삭제
 const TTL_CLEANUP_INTERVAL_MS = 20 * 60 * 1000; // 20분마다 오래된 positions 삭제(작은 배치로 vacuum 부담↓)
@@ -38,9 +39,16 @@ app.use(express.json());
 const httpServer = http.createServer(app);
 
 // WebSocket 서버 (브라우저 relay용)
-const wss = new WebSocketServer({ server: httpServer, path: '/relay' });
+// perMessageDeflate: AIS 스냅샷 JSON은 키·값 반복이 많아 deflate로 ~70-80% 줄어듦 (Render egress 절감)
+const wss = new WebSocketServer({ server: httpServer, path: '/relay', perMessageDeflate: true });
 wss.on('connection', (ws) => {
   console.log('[RELAY] browser connected, total:', wss.clients.size);
+  // 초기 전체 스냅샷 1회 — 새 탭이 즉시 전체 선박을 받음(위치가 움직일 때까지 기다리지 않음)
+  const ships = [];
+  for (const r of shipState.values()) { const c = compactShip(r); if (c) ships.push(c); }
+  if (ships.length && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'snapshot', ships, full: true }));
+  }
   ws.on('close', () => console.log('[RELAY] browser disconnected, total:', wss.clients.size));
 });
 
@@ -50,12 +58,29 @@ function broadcast(data) {
   });
 }
 
+// 지도에 필요한 필드만 추린 compact 선박 객체 (raw aisstream 봉투 대신 relay 페이로드로 사용).
+// 의미 있는 값만 포함해 바이트·파싱 절약 (없는 필드는 프론트가 기존값 유지).
+function compactShip(r) {
+  if (!r || r.lat == null || r.lng == null) return null;
+  const s = { mmsi: r.mmsi, lat: r.lat, lng: r.lng };
+  if (r.speed != null) s.speed = r.speed;
+  if (r.heading != null) s.heading = r.heading;
+  if (r.nav_status != null) s.nav_status = r.nav_status;
+  if (r.vessel_type && r.vessel_type !== 'Other') s.vessel_type = r.vessel_type;
+  if (r.ship_name) s.ship_name = r.ship_name;
+  if (r.flag_country) s.flag_country = r.flag_country;
+  if (r.destination) s.destination = r.destination;
+  if (r.eta) s.eta = r.eta;
+  return s;
+}
+
 // ── AIS 데이터 배치 버퍼 ──────────────────────────────────────────────────────
 // shipState: mmsi → 누적 전체 레코드(위치+정적 통합). 절대 통째로 비우지 않고 유지한다.
 // 과거엔 30초마다 버퍼를 비워 정적 데이터(vessel_type/ship_name)가 위치 갱신에 덮여 사라졌음
 // → 누적 캐시 + 정규화 컬럼(모든 행 동일 키)으로 PostgREST upsert가 다른 컬럼을 NULL로 지우는 문제 제거.
 const shipState = new Map();      // mmsi → { ...모든 컬럼 }
-const dirtyMmsi = new Set();      // 마지막 flush 이후 변경된 mmsi
+const dirtyMmsi = new Set();      // 마지막 Supabase flush 이후 변경된 mmsi
+const relayDirty = new Set();     // 마지막 relay flush 이후 변경된 mmsi (브라우저 중계용, 별도 관리)
 const positionInsertBuf = [];     // { mmsi, lat, lng, speed, recorded_at }[]
 const lastPositionStoredAt = new Map(); // mmsi → 마지막 이력 저장 시각(throttle용)
 
@@ -73,6 +98,7 @@ function applyShipUpdate(mmsi, fields) {
   Object.assign(cur, fields);
   shipState.set(mmsi, cur);
   dirtyMmsi.add(mmsi);
+  relayDirty.add(mmsi);
 }
 
 function mapAISTypeToCategory(typeCode) {
@@ -188,6 +214,21 @@ function parseStaticDataReport(msg) {
   return out;
 }
 
+// ── 브라우저 relay 배치 (2초) ─────────────────────────────────────────────────
+// 변경된 선박만 compact 스냅샷으로 묶어 전송. 같은 선박의 초당 다중 위치보고는 1건으로 dedup되고,
+// perMessageDeflate 압축까지 더해 raw firehose 중계 대비 egress가 90%+ 줄어든다.
+setInterval(() => {
+  if (relayDirty.size === 0) return;
+  if (wss.clients.size === 0) { relayDirty.clear(); return; } // 보는 사람 없으면 누적 비우고 skip
+  const ships = [];
+  for (const mmsi of relayDirty) {
+    const c = compactShip(shipState.get(mmsi));
+    if (c) ships.push(c);
+  }
+  relayDirty.clear();
+  if (ships.length) broadcast(JSON.stringify({ type: 'snapshot', ships }));
+}, RELAY_FLUSH_INTERVAL_MS);
+
 // ── Supabase 배치 upsert (30초) ───────────────────────────────────────────────
 setInterval(async () => {
   if (dirtyMmsi.size === 0) return;
@@ -265,8 +306,9 @@ function connectAIS() {
   aisWs.on('message', (data) => {
     lastAisMessageAt = Date.now();
     const raw = data.toString();
-    // 브라우저로 relay
-    broadcast(raw);
+    // 브라우저 relay는 더 이상 메시지마다 보내지 않음 — applyShipUpdate가 relayDirty에 모아
+    // 2초마다 압축 스냅샷 1건으로 묶어 전송(아래 relay flush). raw firehose를 그대로
+    // 모든 클라이언트에 중계하던 게 Render egress 폭증의 주범이었음.
 
     try {
       const msg = JSON.parse(raw);

@@ -167,6 +167,11 @@ aisstream.io WebSocket (전 세계 BoundingBox: [[-90,-180],[90,180]])
     ↓ (단일 연결, server/index.js)
 Node.js 서버 (포트 3001)
     ├─ WebSocket relay → 브라우저 (ws://localhost:3001/relay)
+    │   ※ raw firehose를 1건씩 중계하지 않음. 변경 선박만 **2초마다 compact 배치 스냅샷**
+    │     `{type:'snapshot', ships:[{mmsi,lat,lng,speed,heading,nav_status,vessel_type,ship_name,flag_country,destination,eta}]}`
+    │     으로 묶어 전송(같은 선박 다중 위치보고는 dedup) + **perMessageDeflate 압축**.
+    │     새 탭 접속 시 전체 스냅샷 1회(full:true). raw 중계 대비 Render egress 90%+↓.
+    │     의미 있는 필드만 포함(없는 필드는 프론트가 기존값 유지). 보는 클라이언트 0이면 전송 skip.
     ├─ shipState(누적 캐시) → 30초 배치 → Supabase ships 테이블 upsert
     │   수집 필드: mmsi, lat, lng, speed, heading, course, nav_status,
     │             ship_name, vessel_type, destination, eta, draught,
@@ -398,6 +403,8 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 20. **Supabase 무료 티어 Disk IO 예산 → 통계 쿼리 경량화**: 무료/소형 티어는 **Disk IO Budget**(버스트 IOPS)이 있어, 소진되면 baseline IOPS로 강등돼 빈 테이블 쿼리도 수 분 걸리거나 타임아웃(HTTP 000)난다. #19 폭증으로 예산이 바닥난 뒤, 부하 0(=Render Suspend)로 ~8분이면 임계선은 넘지만 무거운 집계 쿼리 몇 개로 즉시 재고갈됨 → 완전 충전엔 더 긴 무부하 시간 필요. **부하를 줄이는 레버는 select 컬럼 수가 아니라(힙 전체를 읽으므로 IO 무관, egress만 절약) ① 빈도 ② 동시성 ③ 캐시**다. 적용: `baselinesWriter` 30→60분, **`/api/comparison-board`를 지역별 30쿼리(resolveBaselineStats)→ 단일 쿼리(해당 metric 최신순 limit 5000 한 번에 읽어 JS 그룹·집계)로 전환** (이 30쿼리 패턴이 stuck 적체의 주범이었음), **port-stats·chokepoint-stats·comparison-board·baseline-history·change-windows에 60초 인메모리 캐시(`statsCache`)** — 패널 여닫을 때마다 ships 재스캔하던 부담 제거. 회복은 Render Suspend + 조용히 대기(무부하 시 IO 예산 자동 충전)뿐이며, 급하면 컴퓨트 사이즈 변경(Small 등)으로 즉시 리셋(=새 하드웨어 재프로비저닝, 메모리·IO 동시 해소).
 
 19. **`ship_positions` 폭증 → Supabase 리소스 소진 (2026-06-13 수정)**: `index.js`가 글로벌 AIS의 **모든** PositionReport를 그대로 `ship_positions`에 INSERT해, 6h TTL만으로도 **~1,130만 행**이 쌓여 무료 티어 디스크 I/O·autovacuum을 소진(대시보드 "exhausting multiple resources" 경고). 수정: ① **같은 mmsi는 60초당 1건만 저장**(`lastPositionStoredAt` throttle) → 쓰기량 10~30×↓, ② TTL **6h→2h**(`POSITIONS_TTL_MS`), ③ 정리 주기 1h→20분(작은 배치). 추가로 TTL DELETE가 풀스캔하지 않도록 `idx_ship_positions_recorded_at`(recorded_at 단독) 인덱스 필요. **기존 백로그는 `TRUNCATE ship_positions;`(SQL Editor)로 즉시 비워야 함** — 항적은 ephemeral이라 수 분 내 재축적. (ship-track 쿼리는 mmsi당 ~120점/2h로 충분.)
+
+21. **Render 대역폭(egress) 폭증 → relay 배치·압축 (2026-06-14 수정)**: `index.js`가 aisstream **글로벌 firehose의 모든 메시지를 raw 그대로 `broadcast`**해, 연결된 브라우저 1개당 월 수백 GB가 나갔다(Render Pro 25GB/월 70% 경고). aisstream→서버(수신)는 ingress라 무과금이고 **서버→브라우저 relay만 과금**이라 relay가 유일한 레버. 수정: ① **`perMessageDeflate: true`**(WSS) — AIS JSON 압축률 높음, ② **메시지마다 중계 폐기 → 변경 선박만 2초마다 compact 배치 스냅샷**(`{type:'snapshot', ships:[...]}`, `compactShip`로 의미 있는 필드만, 같은 mmsi 다중 위치보고 dedup), `relayDirty` Set으로 변경분 추적(Supabase용 `dirtyMmsi`와 별도), ③ 새 탭 접속 시 전체 스냅샷 1회(`full:true`), ④ **보는 클라이언트 0이면 전송 skip**. 프론트(`useAISStream.js` onmessage)도 raw aisstream 파서 → snapshot 파서로 교체(없는 필드는 기존값 유지). 효과: raw 중계 대비 egress 90%+↓. (추가 절감 여지: 방치 탭 자동 종료 — 미적용.)
 
 ---
 
