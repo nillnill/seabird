@@ -9,6 +9,10 @@ const PROXY_WS_URL = import.meta.env.VITE_PROXY_URL
   ? import.meta.env.VITE_PROXY_URL.replace(/^http/, 'ws') + '/relay'
   : 'ws://localhost:3001/relay';
 const SELECT_COLS = 'mmsi, ship_name, vessel_type, lat, lng, speed, heading, destination, flag_country, nav_status, eta';
+// 방치 탭 대역폭 절감: 백그라운드 탭은 즉시, 포그라운드라도 N분 무활동이면 relay를 끊는다.
+// 다시 보거나 활동하면 자동 재연결(서버가 접속 시 full 스냅샷을 다시 줘 즉시 복구).
+const IDLE_DISCONNECT_MS = 10 * 60 * 1000;   // 10분 무활동 → relay 종료
+const IDLE_CHECK_INTERVAL_MS = 60 * 1000;    // 1분마다 유휴 점검
 
 export function useAISStream(mapRef) {
   const bufferRef = useRef([]);
@@ -16,6 +20,8 @@ export function useAISStream(mapRef) {
   const wsRef = useRef(null);
   const intervalRef = useRef(null);
   const lastSaveRef = useRef(0); // localStorage 마지막 저장 시각
+  const intentionalCloseRef = useRef(false); // 유휴/숨김으로 의도 종료 시 자동 재연결 억제
+  const lastActivityRef = useRef(Date.now()); // 마지막 사용자 활동 시각(유휴 판정용)
   const { setWsStatus, setShipCount } = useStore.getState();
 
   const loadCache = useCallback(async () => {
@@ -168,7 +174,9 @@ export function useAISStream(mapRef) {
   }, [mapRef, setShipCount]);
 
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+    const rs = wsRef.current?.readyState;
+    if (rs === WebSocket.OPEN || rs === WebSocket.CONNECTING) return;
+    intentionalCloseRef.current = false; // 새 연결 시작 → 자동 재연결 다시 허용
 
     setWsStatus('CONNECTING');
     const ws = new WebSocket(PROXY_WS_URL);
@@ -217,23 +225,64 @@ export function useAISStream(mapRef) {
     ws.onerror = () => setWsStatus('ERROR');
 
     ws.onclose = () => {
+      if (intentionalCloseRef.current) return; // 유휴/숨김 종료 — 재연결은 활동·복귀 시에만
       setWsStatus('DISCONNECTED');
       // 5초 후 재연결
       setTimeout(connect, 5000);
     };
   }, [setWsStatus]);
 
+  // 유휴/백그라운드 → relay 종료 (egress 절감). 자동 재연결은 억제.
+  const disconnect = useCallback((status) => {
+    intentionalCloseRef.current = true;
+    wsRef.current?.close();
+    setWsStatus(status);
+  }, [setWsStatus]);
+
   useEffect(() => {
     loadCache();
     connect();
     intervalRef.current = setInterval(flushBuffer, BUFFER_INTERVAL_MS);
-    // 3분마다 Supabase에서 선종·국적 보강 → 지도 색상이 시간이 지날수록 채워짐
-    const enrichTimer = setInterval(() => { enrichFromSupabase(); }, 3 * 60 * 1000);
+    // 3분마다 Supabase에서 선종·국적 보강 → 지도 색상이 시간이 지날수록 채워짐 (숨김 탭은 skip)
+    const enrichTimer = setInterval(() => { if (!document.hidden) enrichFromSupabase(); }, 3 * 60 * 1000);
+
+    // 사용자 활동 기록 + 유휴로 끊겼던 보이는 탭이면 즉시 재연결
+    const markActivity = () => {
+      lastActivityRef.current = Date.now();
+      const rs = wsRef.current?.readyState;
+      if (!document.hidden && rs !== WebSocket.OPEN && rs !== WebSocket.CONNECTING) connect();
+    };
+    const ACTIVITY_EVENTS = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel', 'scroll'];
+    ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, markActivity, { passive: true }));
+
+    // 탭 가시성: 백그라운드면 즉시 종료, 복귀하면 재연결
+    const onVisibility = () => {
+      if (document.hidden) {
+        disconnect('PAUSED');
+      } else {
+        lastActivityRef.current = Date.now();
+        connect();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    // 포그라운드라도 N분 무활동이면 종료
+    const idleTimer = setInterval(() => {
+      if (document.hidden) return; // 숨김은 visibility 핸들러가 이미 처리
+      if (wsRef.current?.readyState === WebSocket.OPEN
+          && Date.now() - lastActivityRef.current > IDLE_DISCONNECT_MS) {
+        disconnect('PAUSED');
+      }
+    }, IDLE_CHECK_INTERVAL_MS);
 
     return () => {
+      intentionalCloseRef.current = true; // 언마운트 종료가 재연결 트리거 안 하도록
       wsRef.current?.close();
       clearInterval(intervalRef.current);
       clearInterval(enrichTimer);
+      clearInterval(idleTimer);
+      document.removeEventListener('visibilitychange', onVisibility);
+      ACTIVITY_EVENTS.forEach((e) => window.removeEventListener(e, markActivity));
     };
-  }, [connect, flushBuffer, loadCache, enrichFromSupabase]);
+  }, [connect, disconnect, flushBuffer, loadCache, enrichFromSupabase]);
 }

@@ -4,6 +4,7 @@ import useStore from '../store/useStore.js';
 const STATUS_CONFIG = {
   CONNECTED:    { dot: 'bg-green-400', label: 'LIVE' },
   CONNECTING:   { dot: 'bg-yellow-400 animate-pulse', label: 'CONNECTING' },
+  PAUSED:       { dot: 'bg-blue-400', label: '일시중지' },
   DISCONNECTED: { dot: 'bg-gray-500', label: 'OFFLINE' },
   ERROR:        { dot: 'bg-red-500 animate-pulse', label: 'ERROR' },
 };
