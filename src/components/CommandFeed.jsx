@@ -42,7 +42,7 @@ export default function CommandFeed() {
   );
 
   return (
-    <aside className={`${mobileView === 'feed' ? 'absolute inset-0 z-30 flex' : 'hidden'} md:static md:z-auto md:flex w-full md:w-80 lg:w-96 h-full flex-col border-l border-sea-border bg-sea-panel`}>
+    <aside data-tour="feed" className={`${mobileView === 'feed' ? 'absolute inset-0 z-30 flex' : 'hidden'} md:static md:z-auto md:flex w-full md:w-80 lg:w-96 h-full flex-col border-l border-sea-border bg-sea-panel`}>
       {/* 피드 헤더 */}
       <div className="px-4 py-3 border-b border-sea-border shrink-0">
         <div className="flex items-center justify-between">

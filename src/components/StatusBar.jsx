@@ -1,5 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import useStore from '../store/useStore.js';
+
+const GUIDE_SEEN_KEY = 'seabird_guide_seen_v1';
 
 const STATUS_CONFIG = {
   CONNECTED:    { dot: 'bg-green-400', label: 'LIVE' },
@@ -27,8 +29,17 @@ function CpChip({ cpId, changePct, severity }) {
 }
 
 export default function StatusBar() {
-  const { wsStatus, shipCount, reports, toggleXCapital, openIntro, toggleDeck } = useStore();
+  const { wsStatus, shipCount, reports, toggleXCapital, openIntro, toggleDeck, openGuide } = useStore();
   const { dot, label } = STATUS_CONFIG[wsStatus] ?? STATUS_CONFIG.DISCONNECTED;
+
+  // 첫 방문엔 가이드 버튼이 통통 튀어 가시성 확보 → 한 번 누르면 멈춤(localStorage)
+  const [guideSeen, setGuideSeen] = useState(() => {
+    try { return !!localStorage.getItem(GUIDE_SEEN_KEY); } catch { return true; }
+  });
+  const startGuide = () => {
+    if (!guideSeen) { try { localStorage.setItem(GUIDE_SEEN_KEY, '1'); } catch { /* ignore */ } setGuideSeen(true); }
+    openGuide();
+  };
 
   // 초크포인트별 최신 보고에서 비교 수치 추출
   const cpComparisons = useMemo(() => {
@@ -81,10 +92,24 @@ export default function StatusBar() {
           <button
             onClick={toggleXCapital}
             aria-label="X Capital"
+            data-tour="xcapital"
             className="flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1 rounded border border-amber-600/40 hover:border-amber-500/70 hover:bg-amber-900/20 text-amber-500/80 hover:text-amber-300 transition-colors"
           >
             <span>💼</span>
             <span className="hidden sm:inline">X Capital</span>
+          </button>
+          <button
+            onClick={startGuide}
+            aria-label="가이드"
+            title="사용 가이드"
+            className={`w-7 h-7 sm:w-auto sm:px-2.5 sm:py-1 flex items-center justify-center sm:gap-1.5 rounded border transition-colors ${
+              guideSeen
+                ? 'border-sea-border text-sea-muted hover:border-blue-500/60 hover:text-blue-400'
+                : 'border-amber-400/70 text-amber-300 animate-bounce'
+            }`}
+          >
+            <span>❔</span>
+            <span className="hidden sm:inline">가이드</span>
           </button>
           <div className="flex items-center gap-1.5 shrink-0">
             <span className={`w-2 h-2 rounded-full ${dot}`} />

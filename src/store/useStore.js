@@ -102,6 +102,11 @@ const useStore = create((set) => ({
   openIntro: () => set({ showIntro: true }),
   closeIntro: () => set({ showIntro: false }),
 
+  // 신규 사용자 가이드 투어 (GNB '?' 버튼으로 수동 실행)
+  showGuide: false,
+  openGuide: () => set({ showGuide: true }),
+  closeGuide: () => set({ showGuide: false }),
+
   // 날씨 마커 (WeatherMarkers용) — 감시 지점별 이모지/심각도
   weatherMarkers: [],
   setWeatherMarkers: (points) => set({ weatherMarkers: points }),
