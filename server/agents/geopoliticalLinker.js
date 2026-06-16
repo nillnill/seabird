@@ -2,7 +2,7 @@ const { createClient } = require('@supabase/supabase-js');
 const fetch = require('node-fetch');
 const { callClaude } = require('./claudeClient');
 
-const POLL_INTERVAL_MS = 60 * 60 * 1000;  // 1시간 (전 에이전트 1시간 배치로 통일)
+const POLL_INTERVAL_MS = 3 * 60 * 60 * 1000;  // 3시간 (전 에이전트 3시간 배치로 통일)
 const NEWS_KEYWORDS = 'strait OR canal OR shipping OR sanctions OR port OR tanker OR blockade OR attack';
 
 const SYSTEM_PROMPT = `You are GEOPOLITICAL LINKER, a maritime geopolitical intelligence agent.

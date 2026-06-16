@@ -5,6 +5,7 @@ import { SHIP_CHARACTERS } from '../data/shipCharacters.js';
 import { LOCODE_MAP } from '../data/locodeMap.js';
 import { normalizeDestination } from '../utils/destinationNormalizer.js';
 import { supabase } from '../utils/supabaseClient.js';
+import { parseUtc, fmtKst } from '../utils/time.js';
 
 const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
 
@@ -198,7 +199,7 @@ function buildNarration(ship, navState, destNorm, vesselTypeKo) {
 // 마지막 수신 시각 → "N분 전"
 function timeAgo(ts) {
   if (!ts) return null;
-  const ms = Date.now() - new Date(ts).getTime();
+  const ms = Date.now() - parseUtc(ts).getTime();
   if (isNaN(ms)) return null;
   const m = Math.floor(ms / 60000);
   if (m < 1) return '방금 전';
@@ -650,8 +651,8 @@ export default function ShipDetailPanel() {
                 <p className="text-[9px] text-white/30 font-mono uppercase tracking-widest">📦 화물 추정 (AI)</p>
                 {cargoResult?._cached_at && (
                   <span className="text-[9px] text-white/25 font-mono">
-                    {new Date(cargoResult._cached_at).toLocaleString('ko-KR', {
-                      timeZone: 'Asia/Seoul', month: 'numeric', day: 'numeric',
+                    {fmtKst(cargoResult._cached_at, {
+                      month: 'numeric', day: 'numeric',
                       hour: '2-digit', minute: '2-digit',
                     })} 추정
                   </span>
@@ -747,7 +748,7 @@ export default function ShipDetailPanel() {
                     <div key={i} className="flex items-center gap-2 py-1 border-b border-white/5 last:border-0">
                       <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${i === 0 ? 'bg-blue-400' : 'bg-white/20'}`} />
                       <span className="text-[10px] font-mono text-white/40 shrink-0 w-32">
-                        {pos.recorded_at?.slice(5, 16).replace('T', ' ')}
+                        {fmtKstMMDDHHmm(parseUtc(pos.recorded_at))}
                       </span>
                       <span className="text-[10px] font-mono text-white/60">
                         {pos.lat?.toFixed(3)}, {pos.lng?.toFixed(3)}

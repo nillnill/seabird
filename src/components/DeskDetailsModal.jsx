@@ -1,0 +1,136 @@
+import { useEffect, useState } from 'react';
+import { INVESTMENT_PERSONAS } from '../data/investmentCharacters.js';
+import { PORT_KO, FREIGHT_GLOSSARY, SERIES_META, SERIES_ORDER } from '../data/xcapGlossary.js';
+import { ModeBadge } from './XCapitalSpace.jsx';
+
+const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
+
+const fmtNum = (n) => (n == null ? '–' : Number(n).toLocaleString());
+
+// X CAPITAL 데스크 "자세히" — 항구·운임지수 설명 + 실수치 시계열 표.
+export default function DeskDetailsModal({ deskKey, seed, onClose }) {
+  const p = INVESTMENT_PERSONAS[deskKey];
+  const [data, setData] = useState(seed ?? null);
+  const [loading, setLoading] = useState(!seed);
+
+  useEffect(() => {
+    if (seed) { setData(seed); setLoading(false); return; }
+    let alive = true;
+    setLoading(true);
+    fetch(`${PROXY_URL}/api/xcap/desk-series?key=${deskKey}&days=30`)
+      .then(r => r.json())
+      .then(d => { if (alive) setData(d); })
+      .catch(() => { if (alive) setData(null); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [deskKey, seed]);
+
+  if (!p) return null;
+
+  const ports = data?.ports ?? [];
+  const units = data?.units ?? {};
+  const modes = data?.modes ?? {};
+  const freightCode = data?.freight?.code;
+  // 최신순(표는 위가 최근)
+  const rows = [...(data?.series ?? [])].reverse();
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className="bg-sea-panel border border-sea-border rounded-xl w-full max-w-3xl max-h-[86vh] flex flex-col overflow-hidden mx-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 헤더 */}
+        <div className="flex items-start justify-between p-4 border-b border-sea-border shrink-0">
+          <div className="min-w-0">
+            <p className="text-[10px] text-sea-muted">
+              <span className="text-white/85 font-semibold">{p.name}</span> · {p.desk} 데스크
+            </p>
+            <h2 className="text-base font-bold text-white leading-tight">데스크 데이터 시계열 (최근 30일)</h2>
+            <p className="text-[11px] text-sea-muted mt-0.5">
+              항구: {ports.map(id => PORT_KO[id] ?? id).join(' · ') || '–'}
+              {freightCode ? `  ·  운임: ${freightCode}` : ''}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-sea-muted hover:text-white transition-colors text-lg leading-none ml-4 shrink-0">✕</button>
+        </div>
+
+        <div className="overflow-y-auto px-5 py-4 space-y-4">
+          {/* 설명 블록 */}
+          <div className="space-y-3">
+            <div>
+              <p className="text-[11px] font-semibold text-white/80 mb-1.5">📊 이 데스크가 쓰는 데이터</p>
+              <ul className="space-y-1 text-[11px] text-white/65 leading-relaxed">
+                {SERIES_ORDER.map(k => {
+                  const m = SERIES_META[k];
+                  return (
+                    <li key={k} className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ background: m.color }} />
+                      <span className="text-white/80">{m.label}</span>
+                      <span className="text-sea-muted">({units[m.unitKey] ?? ''})</span>
+                      {modes[k] && <ModeBadge mode={modes[k]} />}
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="text-[10px] text-white/40 mt-1.5">
+                혼잡=항구권 정박·대기 선박 수, 입항=항구로 향하는 선박 수, 유입=입항 선박의 화물 추정량,
+                체류=항구 평균 머문 시간(회전속도·수요압력 신호), 운임=KOBC 운임지수.
+                <br /><span className="text-cyan-300/70">공식 입항·화물처리=해양수산부 월별 공식 통계(AIS 사각지대인 국내 철강·정유항 보완, 월 계단·점선). 화물처리는 전국 품목 기준.</span>
+              </p>
+            </div>
+
+            {freightCode && FREIGHT_GLOSSARY[freightCode] && (
+              <div className="rounded-lg border border-white/10 bg-black/30 p-3">
+                <p className="text-[11px] font-semibold text-white/80">{FREIGHT_GLOSSARY[freightCode].name}</p>
+                <p className="text-[10px] text-white/55 leading-relaxed mt-1">{FREIGHT_GLOSSARY[freightCode].desc}</p>
+              </div>
+            )}
+          </div>
+
+          {/* 시계열 표 */}
+          {loading ? (
+            <p className="text-[11px] font-mono text-sea-muted animate-pulse py-6 text-center">시계열 로드 중…</p>
+          ) : rows.length === 0 ? (
+            <p className="text-[11px] font-mono text-white/40 py-6 text-center">시계열 데이터 축적 중 — 수집이 쌓이면 표시됩니다.</p>
+          ) : (
+            <div className="overflow-x-auto rounded-lg border border-white/10">
+              <table className="w-full border-collapse text-[11px]">
+                <thead className="bg-white/[0.06]">
+                  <tr>
+                    <th className="text-left font-semibold text-white/70 px-3 py-2 border-b border-white/10 whitespace-nowrap">날짜</th>
+                    {SERIES_ORDER.map(k => (
+                      <th key={k} className="text-right font-semibold text-white/70 px-3 py-2 border-b border-white/10 whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1">
+                          <span style={{ color: SERIES_META[k].color }}>{SERIES_META[k].label}</span>
+                        </div>
+                        <span className="text-[9px] text-sea-muted font-normal">{units[SERIES_META[k].unitKey] ?? ''}</span>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <tr key={r.date} className="hover:bg-white/[0.03] transition-colors">
+                      <td className="text-white/70 px-3 py-1.5 border-b border-white/5 font-mono whitespace-nowrap">{r.date}</td>
+                      {SERIES_ORDER.map(k => (
+                        <td key={k} className="text-right text-white/80 px-3 py-1.5 border-b border-white/5 font-mono tabular-nums">
+                          {fmtNum(r[k])}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <p className="text-[10px] text-white/35 leading-relaxed">
+            ※ 절대 수치는 AIS 커버리지 기반 거친 추정이며 투자 자문이 아닙니다.
+            '축적 중' 배지는 표본이 아직 충분치 않은 지표입니다.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

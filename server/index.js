@@ -17,6 +17,12 @@ const { startWeatherAgent } = require('./agents/weatherAgent');
 const { startCommodityAnalyst } = require('./agents/commodityAnalyst');
 const { startFlowReporter } = require('./agents/flowReporter');
 const { startMasterAgent } = require('./agents/masterAgent');
+const { startKobcScraper } = require('./agents/kobcScraper');
+const { startTankerScraper } = require('./agents/tankerScraper');
+const { startKorPortStats } = require('./agents/korPortStats');
+const { startInvestmentAnalyst } = require('./agents/investmentAnalyst');
+const { buildAllDesks, freightSeries, buildDeskSeries, DESKS } = require('./agents/xcapData');
+const { cleanupDwellEvents } = require('./agents/dwellTracker');
 const { callClaude } = require('./agents/claudeClient');
 const { TRADE_PAIRS, SEASONAL_INDEX, getSeasonalCategory } = require('./data/tradePairs');
 
@@ -282,6 +288,10 @@ setInterval(async () => {
   else console.log('[TTL] ship_positions cleanup done');
 }, TTL_CLEANUP_INTERVAL_MS);
 
+// dwell_events 180일 TTL 정리(느린 6h 주기 + 시작 30s 후 1회). port_presence는 자가 정리.
+setInterval(() => cleanupDwellEvents(supabase).catch(() => {}), 6 * 3600000);
+setTimeout(() => cleanupDwellEvents(supabase).catch(() => {}), 30000);
+
 // ── aisstream.io WebSocket 연결 ───────────────────────────────────────────────
 let aisWs = null;
 let lastAisMessageAt = 0;             // 마지막 AIS 메시지 수신 시각
@@ -374,6 +384,11 @@ setTimeout(() => startBaselinesWriter(),   5000);
 setTimeout(() => startWeatherAgent(),      5500);
 setTimeout(() => startCommodityAnalyst(),  6000);
 setTimeout(() => startFlowReporter(),      6500);
+setTimeout(() => startKobcScraper(),       7000);  // KOBC 운임·선가 스크래핑 → freight_history
+setTimeout(() => startTankerScraper(),     7500);  // BDTI 더티탱커 운임 → freight_history (Wagner 정유 데스크)
+setTimeout(() => startKorPortStats(),      8000);  // 해양수산부 월별 공식 통계 → kor_port_monthly (국내항 보완)
+// INVESTMENT_ANALYST는 항만 집계 + freight_history를 종합 → 운임 백필 + 첫 집계 후 기동
+setTimeout(() => startInvestmentAnalyst(), 20000);
 // MASTER는 하위 '사실' 보고를 종합해 severity를 판단 → 첫 배치가 쌓일 시간을 두고 120초 후 기동
 setTimeout(() => startMasterAgent(),        120000);
 
@@ -653,6 +668,58 @@ app.get('/api/chokepoint-stats', async (req, res) => {
     res.json(payload);
   } catch (err) {
     console.error('[CHOKEPOINT_STATS] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── X CAPITAL (투자 인텔리전스) ─────────────────────────────────────────────
+// 3 데스크별 정량 신호 + 지표별 mode 플래그 (데모/추정/라이브). 60초 캐시.
+app.get('/api/xcap/desks', async (req, res) => {
+  const cached = cacheGet('xcap:desks');
+  if (cached) return res.json(cached);
+  try {
+    const payload = await buildAllDesks(supabase, PORTS);
+    cacheSet('xcap:desks', payload);
+    res.json(payload);
+  } catch (err) {
+    console.error('[XCAP_DESKS] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 운임 시계열 (듀얼축 차트용). code=KDCI|CAPE|NCFI 등, days 기본 90.
+app.get('/api/xcap/freight', async (req, res) => {
+  const code = String(req.query.code ?? 'KDCI');
+  const days = Math.min(parseInt(req.query.days, 10) || 90, 365);
+  const cacheKey = `xcap:freight:${code}:${days}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+  try {
+    const fs = await freightSeries(supabase, code, days);
+    const payload = { code, unit: fs.unit, mode: fs.mode, series: fs.daily, latest: fs.latest, change_pct: fs.change_pct };
+    cacheSet(cacheKey, payload);
+    res.json(payload);
+  } catch (err) {
+    console.error('[XCAP_FREIGHT] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 데스크별 정렬 시계열 (혼잡·입항·유입·체류·운임). 차트·자세히 표 공용. 60초 캐시.
+app.get('/api/xcap/desk-series', async (req, res) => {
+  const key = String(req.query.key ?? 'axelrod');
+  const days = Math.min(parseInt(req.query.days, 10) || 30, 120);
+  const desk = DESKS.find(d => d.key === key);
+  if (!desk) return res.status(404).json({ error: 'desk not found' });
+  const cacheKey = `xcap:series:${key}:${days}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+  try {
+    const payload = await buildDeskSeries(supabase, desk, PORTS, days);
+    cacheSet(cacheKey, payload);
+    res.json(payload);
+  } catch (err) {
+    console.error('[XCAP_DESK_SERIES] error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

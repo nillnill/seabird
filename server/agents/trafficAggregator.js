@@ -62,6 +62,8 @@ async function aggregatePort(db, port) {
   const inflow = { tanker_ships: 0, bulk_ships: 0, container_ships: 0, lng_ships: 0,
     est_liquid_dwt: 0, est_dry_bulk_dwt: 0, est_container_teu: 0, est_lng_dwt: 0 };
   let destWithData = 0, draughtSum = 0, draughtN = 0;
+  // 체류시간(dwell) 추적용 — 현재 정박·대기(speed<=2kn = waiting_ships 정의) 선박. dwellTracker가 소비.
+  const presentShips = [];
 
   rows.forEach(s => {
     const type = s.vessel_type || 'Other';
@@ -74,6 +76,7 @@ async function aggregatePort(db, port) {
     else if (sp <= 2.0) { status.waiting++; speedHist.slow++; }
     else if (sp < 5.0) { status.maneuvering++; speedHist.slow++; }
     else { status.transit++; if (sp < 10) speedHist.cruise++; else speedHist.fast++; }
+    if (sp <= 2.0 && s.mmsi) presentShips.push({ mmsi: s.mmsi, vessel_type: type });
 
     let isInbound = false;
     if (sp >= 3 && s.lat != null && s.lng != null) {
@@ -136,6 +139,7 @@ async function aggregatePort(db, port) {
     flag_dist: toDist(flagDist).slice(0, 8)
       .map(([flag, count]) => ({ flag, count, pct: total ? Math.round(count / total * 100) : 0 })),
     commodity_inflow: inflow,
+    present_ships: presentShips,
   };
 }
 

@@ -1,6 +1,6 @@
 # Seabird — AI eyes on every ocean
 
-해양 실시간 인텔리전스 플랫폼. AIS 선박 데이터와 8개 AI 에이전트가 결합된 해커톤 프로젝트.
+해양 실시간 인텔리전스 플랫폼. AIS 선박 데이터와 9개 AI 에이전트가 결합된 해커톤 프로젝트.
 
 > **CLAUDE.md 관리 원칙**: 파일 추가·삭제·기능 변경이 있을 때마다 이 문서를 업데이트한다.
 
@@ -21,6 +21,8 @@
 | 뉴스 검색 | Perplexity API (영문 검색 → Claude 한국어 번역) |
 | 날씨 | Open-Meteo API (무료, 키 불필요 — 해역별 날씨코드·풍속) |
 | 원자재/운임 | Perplexity API (가격 검색 → Claude 구조화) |
+| 운임·선가 지수 | KOBC(한국해양진흥공사) 스크래핑 (건화물 KDCI·CAPE·PANAMAX, 컨테이너 KCCI, 신조선가 → freight_history, sDay/eDay로 백필) |
+| 투자 인텔리전스 | X CAPITAL — 3 페르소나(Billions 모티프) 데스크가 대안데이터로 투자 아이디어 제시 |
 
 ---
 
@@ -48,21 +50,27 @@ seabird/
 │   └── generate_region_characters.cjs ← regionData.js(ESM)에서 캐릭터 페르소나만 추출 → server/data/regionCharacters.js(CJS) 미러 생성 (history 제외)
 │
 ├── server/
-│   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/baseline-history + /api/change-windows + /api/inflow-windows + /api/comparison-board + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작 (통계 GET 60초 캐시·comparison-board 단일쿼리)
+│   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/baseline-history + /api/change-windows + /api/inflow-windows + /api/comparison-board + /api/xcap/desks + /api/xcap/freight + /api/xcap/desk-series + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작 (통계 GET 60초 캐시·comparison-board 단일쿼리·dwell_events 180일 TTL 정리)
 │   ├── package.json
 │   ├── .env                   ← 서버 환경변수 (git 제외)
 │   ├── agents/
 │   │   ├── claudeClient.js    ← Node.js 전용 Claude API 래퍼
 │   │   ├── baselineUtils.js   ← 평년(baseline) 산출 공유 정책 resolveBaseline()/resolveBaselineStats(mean·std·n·latest·series) — 항만·초크포인트 공용
 │   │   ├── trafficAggregator.js ← 항만·초크포인트 실시간 집계 공유 모듈 aggregatePort()/aggregateChokepoint() — 선종·기국·목적지·입출항(선종별)·원자재 유입 추정(estLadenTons). port-stats·chokepoint-stats·baselinesWriter 공용
-│   │   ├── portAnalyst.js     ← 60분 폴링, Haiku, 항구별 대표 캐릭터가 1인칭으로 자기 항구 현재 상황 보고(항구당 1행). 데이터 있는 항구만(0척 skip), 재시작 중복 방지(최근 50분 내 skip), 동시성 5
-│   │   ├── chokepointWatcher.js ← 60분 폴링, Haiku, 초크포인트별 대표 캐릭터 1인칭 통항 보고(초크포인트당 1행). 0척 skip(거짓 CRITICAL 방지), raw_data.cp_id·change_pct·location.chokepoint_id 보존(마커·StatusBar 소비)
-│   │   ├── geopoliticalLinker.js ← 60분 폴링, Sonnet, Perplexity 영문검색 → 한국어 번역
-│   │   ├── masterAgent.js     ← 60분 폴링, Sonnet, **유일하게 severity(WARNING/CRITICAL)를 판단하는 에이전트**. 최근 90분 하위 '사실' 보고를 종합(data_points 현재값·평년·change_pct + 상관관계)해 위험도 결정. index.js에서 +120초 후 기동(첫 배치 적재 대기)
-│   │   ├── weatherAgent.js    ← 60분 폴링, Haiku, Open-Meteo 13개 해역 날씨 → 이모지 마커
-│   │   ├── commodityAnalyst.js ← 60분 폴링, Haiku, Perplexity 원자재·운임 가격
-│   │   ├── flowReporter.js    ← 60분 폴링, Haiku, traffic_snapshots 이력 → 항만 원자재 유입 추세(DoD)
-│   │   └── baselinesWriter.js ← 60분 폴링, aggregator로 전 지역 1회 집계 → baselines(스칼라)+traffic_snapshots(분해) 동시 적재 (무료 티어 Disk IO 절약 위해 30→60분)
+│   │   ├── portAnalyst.js     ← 3시간 폴링, Haiku, 항구별 대표 캐릭터가 1인칭으로 자기 항구 현재 상황 보고(항구당 1행). 데이터 있는 항구만(0척 skip), 재시작 중복 방지(최근 50분 내 skip), 동시성 5
+│   │   ├── chokepointWatcher.js ← 3시간 폴링, Haiku, 초크포인트별 대표 캐릭터 1인칭 통항 보고(초크포인트당 1행). 0척 skip(거짓 CRITICAL 방지), raw_data.cp_id·change_pct·location.chokepoint_id 보존(마커·StatusBar 소비)
+│   │   ├── geopoliticalLinker.js ← 3시간 폴링, Sonnet, Perplexity 영문검색 → 한국어 번역
+│   │   ├── masterAgent.js     ← 3시간 폴링, Sonnet, **유일하게 severity(WARNING/CRITICAL)를 판단하는 에이전트**. 최근 3.5시간 하위 '사실' 보고를 종합(data_points 현재값·평년·change_pct + 상관관계)해 위험도 결정. index.js에서 +120초 후 기동(첫 배치 적재 대기)
+│   │   ├── weatherAgent.js    ← 3시간 폴링, Haiku, Open-Meteo 13개 해역 날씨 → 이모지 마커
+│   │   ├── commodityAnalyst.js ← 3시간 폴링, Haiku, Perplexity 원자재·운임 가격
+│   │   ├── flowReporter.js    ← 3시간 폴링, Haiku, traffic_snapshots 이력 → 항만 원자재 유입 추세(DoD)
+│   │   ├── kobcScraper.js     ← 12시간 폴링, KOBC gridList.do(sDay/eDay 백필) HTML 파싱 → freight_history 적재. drybulk(kdci/gridList.do, KDCI·CAPE·PANAMAX·SUPRAMAX·HANDY)·container(timeseries/gridList.do?mId=0304, KCCI 종합)·shipprice(sln/gridList.do 신조선가)
+│   │   ├── xcapData.js        ← X CAPITAL 데스크 집계 공유 모듈 buildAllDesks()/buildDeskSeries()/dwellSignals()/lagCorrelation()/freightSeries(). 3 데스크(axelrod/taylor/wagner) 정량 신호 + dwell(체류시간) 신호 + 지표별 mode 플래그(live/estimate/demo). buildDeskSeries=데스크 전 항구 합산 일별 시계열(혼잡·입항·유입·체류·운임, /api/xcap/desk-series). /api/xcap/* + investmentAnalyst 공용
+│   │   ├── tankerScraper.js   ← BDTI(발틱 더티탱커) 운임 → freight_history(Wagner 정유 데스크). investing.com은 서버 Cloudflare 403이라 best-effort+demo 폴백. env BDTI_FETCH_URL(프록시)로 라이브 가능
+│   │   ├── korPortStats.js    ← 해양수산부 공공데이터(data.go.kr) 월별 공식 통계 → kor_port_monthly. SsopVsslEtryndHarbor2(항만별 입출항, per-port)·SsopCargFrghtPrdlst2(품목별 화물처리, 전국). AIS 사각지대 국내 철강·정유항(광양·포항·당진·울산·여수) 보완. env DATA_GO_KR_KEY, 12h 폴링, sym/eym(YYYYMM) 13개월 백필
+│   │   ├── dwellTracker.js    ← 항만 체류시간 저비용 추적. baselinesWriter 매시 스캔에 올라타 정박·대기(≤2kn) 선박을 port_presence(open ledger)에 upsert(port_presence_touch RPC), 2.5h 미관측 시 dwell_events로 마감. ship_positions(2h TTL) 미사용 → 비용 거의 0. recordPresence/closeStaleVisits/trackPortDwell/cleanupDwellEvents
+│   │   ├── investmentAnalyst.js ← 3시간 폴링, Haiku, X CAPITAL 9번째 에이전트. xcapData + 시황 종합 → 페르소나별 투자 시그널. raw_data.desks 병합
+│   │   └── baselinesWriter.js ← 60분 적재(데이터 writer — 보고 아님), aggregator로 전 지역 1회 집계 → baselines(스칼라)+traffic_snapshots(분해) 동시 적재 + dwellTracker.trackPortDwell 호출(전 항구 동일 cycleNow 공유) (무료 티어 Disk IO 절약 위해 30→60분)
 │   └── data/
 │       ├── tradePairs.js      ← 15개 교역 쌍 + 계절 인덱스 (CommonJS)
 │       ├── flag.js            ← MID_TO_FLAG(MMSI MID→ISO3)·mmsiToFlag 단일 소스 (index.js·trafficAggregator 공용)
@@ -95,6 +103,8 @@ seabird/
     │   ├── FeedFilter.jsx     ← 심각도(CRITICAL/WARNING/INFO)·기간(1h~7d) 필터 (에이전트 토글은 FeedTabs로 이동)
     │   ├── StatusBar.jsx      ← 상단 상태 표시줄 (📊 통계 대시보드 토글 버튼)
     │   ├── StatsDashboard.jsx ← 통계 대시보드 모달 (Recharts, 10개 섹션 — 평년 대비 편차 보드 포함, /api/comparison-board)
+    │   ├── XCapitalSpace.jsx  ← 💼 X CAPITAL 투자 인텔리전스 풀스크린 공간(office.webp 배경). 3 페르소나 카드(시그널·thesis·정량칩 2×2: 혼잡·유입·체류시간·운임 + 지표별 mode 배지 + "자세히" 버튼) + 선택 데스크 다지표 차트(혼잡·입항·유입·체류·운임, ComposedChart, 지표별 토글 칩 + 지수(시작=100)/원본값 토글, /api/xcap/desk-series로 데스크 전 항구 합산 — 대표항 1곳만 쓰던 차트 버그 수정) + 글로벌 데모/라이브 배지. ModeBadge export(DeskDetailsModal 재사용). /api/xcap/desks·/api/xcap/desk-series + 최신 INVESTMENT_ANALYST 보고(raw_data.desks) 소비. StatusBar 💼 버튼·ESC 토글(자세히 모달 열려 있으면 모달만 닫음)
+    │   ├── DeskDetailsModal.jsx ← X CAPITAL "자세히" 모달(z-[60]). 데스크가 쓰는 항구(한글)·운임지수 설명(glossary) + 실수치 시계열 표(최신순, 컬럼별 단위·ModeBadge). /api/xcap/desk-series 자체 fetch(부모 캐시 seed). ReportModal 표 스타일 미러
     │   └── IntroPage.jsx      ← 인트로 오버레이 (문명 게임 스타일, 맬컴 맥린 지도자 + 챕터형 4막: 지도자/역사 기술트리/능력/팁). 첫 방문 자동 1회(localStorage `seabird_intro_seen_v1`) + GNB 📜 인트로 버튼. 이미지 emoji fallback. 콘텐츠는 introContent.js
     │
     ├── hooks/
@@ -114,6 +124,8 @@ seabird/
     └── data/
         ├── regionData.js      ← 37개 지역 데이터 (초크포인트 7 + 항만 30): 캐릭터·통계·역사·newsQuery·image
         ├── shipCharacters.js  ← 선박 타입별 창작 캐릭터 8개 (직함·quote·bgColor·image 경로)
+        ├── investmentCharacters.js ← X CAPITAL 페르소나 3인 (Billions 모티프: Bobby Axelrod·Taylor Mason·Mike Wagner). key가 서버 xcapData DESKS[].key와 일치(axelrod/taylor/wagner). desk·equities·accent·image(/characters/xcap_*.webp)
+        ├── xcapGlossary.js    ← X CAPITAL 자세히/차트용 한글 라벨: PORT_KO(항구 id→한글, regionData는 역사인물명이라 별도)·FREIGHT_GLOSSARY(KCCI/KDCI/CAPE 설명)·SERIES_META/SERIES_ORDER(지표 라벨·색상·축·단위키)
         ├── introContent.js    ← 인트로 페이지 콘텐츠 (MALCOLM 지도자·ERAS 6시대·ABILITIES·TIPS·CHAPTERS). IntroPage.jsx가 소비
         ├── tradePairs.js      ← (브라우저용 ESM 버전, 현재 미사용)
         └── hardcodedBaselines.js ← (서버 에이전트에 인라인됨)
@@ -125,12 +137,12 @@ seabird/
 
 ```
 Node.js 서버 (server/index.js)
-    ├─ agents/portAnalyst.js      (60분, Haiku)  ─┐  ← 항구별 캐릭터 1인칭
-    ├─ agents/chokepointWatcher.js (60분, Haiku)  ├─ Supabase INSERT  ← 초크포인트별 캐릭터 1인칭
-    ├─ agents/geopoliticalLinker.js(15분, Sonnet)  │   agent_reports
-    ├─ agents/masterAgent.js       (10분, Sonnet)  │
-    ├─ agents/weatherAgent.js      (30분, Haiku)   │  ← Open-Meteo 13개 해역
-    └─ agents/commodityAnalyst.js  (60분, Haiku) ──┘  ← Perplexity 원자재·운임
+    ├─ agents/portAnalyst.js      (3시간, Haiku) ─┐  ← 항구별 캐릭터 1인칭
+    ├─ agents/chokepointWatcher.js (3시간, Haiku) ├─ Supabase INSERT  ← 초크포인트별 캐릭터 1인칭
+    ├─ agents/geopoliticalLinker.js(3시간, Sonnet) │   agent_reports
+    ├─ agents/masterAgent.js       (3시간, Sonnet) │
+    ├─ agents/weatherAgent.js      (3시간, Haiku)  │  ← Open-Meteo 13개 해역
+    └─ agents/commodityAnalyst.js  (3시간, Haiku)──┘  ← Perplexity 원자재·운임
                                                     ↓ Realtime
 브라우저 (useAgentReports.js)          ←── Supabase Realtime 구독
     → addReport() → 피드 카드 표시
@@ -187,7 +199,7 @@ Node.js 서버 (포트 3001)
 
 ---
 
-## 8개 AI 에이전트
+## 9개 AI 에이전트
 
 에이전트는 **서버(server/agents/)** 에서 실행됨. 모델 티어화로 비용 최적화.
 
@@ -195,14 +207,17 @@ Node.js 서버 (포트 3001)
 
 | 에이전트 | 파일 | 모델 | 트리거 | 동작 |
 |----------|------|------|--------|------|
-| PORT ANALYST | `server/agents/portAnalyst.js` | claude-haiku-4-5 | 60분 폴링 | **항구별** 대표 캐릭터가 1인칭으로 자기 항구의 현재 운영 상황 보고(항구당 호출 1회·행 1건). 실시간 데이터 있는 항구만(0척 skip), 최근 50분 보고 시 skip(재시작 중복 방지), Claude 동시성 5 |
-| CHOKEPOINT WATCHER | `server/agents/chokepointWatcher.js` | claude-haiku-4-5 | 60분 폴링 | **초크포인트별** 대표 캐릭터가 1인칭으로 통항 상황 보고(초크포인트당 행 1건). 0척 skip(거짓 CRITICAL 방지). `raw_data.cp_id`·`change_pct`·`location.chokepoint_id` 보존(마커·StatusBar 칩 소비) |
-| GEOPOLITICAL LINKER | `server/agents/geopoliticalLinker.js` | claude-sonnet-4-6 | 60분 폴링 | Perplexity 영문검색 → Claude 한국어 번역 |
-| MASTER AGENT | `server/agents/masterAgent.js` | claude-sonnet-4-6 | 60분 폴링 | **유일한 severity 판단자**. 최근 90분 하위 사실 보고를 종합해 WARNING/CRITICAL 결정 + 상관관계·근본원인·한국 공급망 영향. (재실행 로직 제거 — 하위 에이전트도 1시간 배치라 불필요) |
-| WEATHER AGENT | `server/agents/weatherAgent.js` | claude-haiku-4-5 | 60분 폴링 | Open-Meteo로 13개 해역 날씨 수집 → 이모지·심각도 마커 + 악천후 보고. 항상 보고 |
-| COMMODITY ANALYST | `server/agents/commodityAnalyst.js` | claude-haiku-4-5 | 60분 폴링 | Perplexity로 원자재·운임 가격 검색 → 구조화 data_points + 한국어 시황 |
-| FLOW REPORTER | `server/agents/flowReporter.js` | claude-haiku-4-5 | 60분 폴링 | `traffic_snapshots` 이력에서 항만 원자재 유입 '강도'(입항 추정 톤수) 24h vs 직전 24h 추세 산출 → Claude 서술. 이력 없으면 자동 skip |
+| PORT ANALYST | `server/agents/portAnalyst.js` | claude-haiku-4-5 | 3시간 폴링 | **항구별** 대표 캐릭터가 1인칭으로 자기 항구의 현재 운영 상황 보고(항구당 호출 1회·행 1건). 실시간 데이터 있는 항구만(0척 skip), 최근 50분 보고 시 skip(재시작 중복 방지), Claude 동시성 5 |
+| CHOKEPOINT WATCHER | `server/agents/chokepointWatcher.js` | claude-haiku-4-5 | 3시간 폴링 | **초크포인트별** 대표 캐릭터가 1인칭으로 통항 상황 보고(초크포인트당 행 1건). 0척 skip(거짓 CRITICAL 방지). `raw_data.cp_id`·`change_pct`·`location.chokepoint_id` 보존(마커·StatusBar 칩 소비) |
+| GEOPOLITICAL LINKER | `server/agents/geopoliticalLinker.js` | claude-sonnet-4-6 | 3시간 폴링 | Perplexity 영문검색 → Claude 한국어 번역 |
+| MASTER AGENT | `server/agents/masterAgent.js` | claude-sonnet-4-6 | 3시간 폴링 | **유일한 severity 판단자**. 최근 3.5시간 하위 사실 보고를 종합해 WARNING/CRITICAL 결정 + 상관관계·근본원인·한국 공급망 영향. (재실행 로직 제거 — 하위 에이전트도 3시간 배치라 불필요) |
+| WEATHER AGENT | `server/agents/weatherAgent.js` | claude-haiku-4-5 | 3시간 폴링 | Open-Meteo로 13개 해역 날씨 수집 → 이모지·심각도 마커 + 악천후 보고. 항상 보고 |
+| COMMODITY ANALYST | `server/agents/commodityAnalyst.js` | claude-haiku-4-5 | 3시간 폴링 | Perplexity로 원자재·운임 가격 검색 → 구조화 data_points + 한국어 시황 |
+| FLOW REPORTER | `server/agents/flowReporter.js` | claude-haiku-4-5 | 3시간 폴링 | `traffic_snapshots` 이력에서 항만 원자재 유입 '강도'(입항 추정 톤수) 24h vs 직전 24h 추세 산출 → Claude 서술. 이력 없으면 자동 skip |
+| INVESTMENT ANALYST | `server/agents/investmentAnalyst.js` | claude-haiku-4-5 | 3시간 폴링 | **X CAPITAL** — `xcapData.buildAllDesks`(항만 혼잡·원자재 유입·운임)로 3 데스크 정량 신호 집계 + 최근 시황 보고 종합 → 페르소나별 투자 시그널(LONG/SHORT/HOLD)·thesis·종목. severity INFO 고정. 보고 1행에 `raw_data.desks=[3]`(정량+서술 병합) → X Capital 공간이 카드로 렌더 |
 | CARGO ESTIMATOR | `src/agents/cargoEstimator.js` | claude-haiku-4-5 (기본, `CARGO_MODEL` 환경변수로 오버라이드) | 선박 클릭 | 선박 종류별 전용 프롬프트, vessel_type 변경 시 자동 재실행. 응답 ~24s(Sonnet)→~13s(Haiku) |
+
+> **KOBC_SCRAPER**(에이전트 아님, `server/agents/kobcScraper.js`, 12시간 폴링): KOBC gridList.do를 `sDay/eDay`로 호출(1년≈246행 백필)해 HTML `<tbody>` 파싱 → `freight_history` upsert(건화물 KDCI·CAPE·PANAMAX·SUPRAMAX·HANDY, 신조선가). JSON·HTML 둘 다 파싱, 실패해도 서버 무중단(데모 모드 폴백).
 
 ### 에이전트 시작 지연 (server/index.js)
 서버 시작 3초 후 500ms 간격 stagger:
@@ -213,12 +228,58 @@ Node.js 서버 (포트 3001)
 - 5500ms: WEATHER AGENT
 - 6000ms: COMMODITY ANALYST
 - 6500ms: FLOW REPORTER (내부적으로 시작 +20s 후 1회 실행)
+- 7000ms: KOBC SCRAPER (운임·선가 → freight_history)
+- 7500ms: TANKER SCRAPER (BDTI 더티탱커 → freight_history)
+- 8000ms: KOR PORT STATS (해양수산부 월별 공식 통계 → kor_port_monthly)
+- 20000ms: INVESTMENT ANALYST (운임 백필 + 첫 항만 집계 후 기동)
 - 120000ms: MASTER AGENT (하위 사실 보고가 쌓일 시간을 두고 기동 → severity 판단)
 
 > 새 에이전트 추가 체크리스트: ① `server/agents/<name>.js` (run/start export) → ② `server/index.js` import + setTimeout stagger → ③ 프론트 2곳 등록: `FeedTabs.jsx` TABS(해당 카테고리 탭의 agents 배열에 추가), `ReportCard.jsx` AGENT_CONFIG(아이콘·라벨). (전체 탭은 agents:null이라 자동 포함. 새 카테고리가 필요하면 TABS에 탭 객체를 추가.)
 
 ### 날씨 이모지 마커
 WEATHER_AGENT는 13개 해역(초크포인트 7 + 태풍다발 해역 6)의 Open-Meteo 현재 날씨를 WMO 코드→이모지, 돌풍(m/s)→심각도(INFO/WARNING/CRITICAL)로 변환해 `raw_data.points`에 담아 보고. 폭풍급 돌풍(≥28m/s)은 🌀로 강조. 프론트는 `useAgentReports`가 최신 WEATHER_AGENT 보고의 points를 `setWeatherMarkers()`로 store에 넣고, `WeatherMarkers` 클래스(mapboxgl.Marker)가 지도에 렌더. Open-Meteo는 **API 키 불필요**.
+
+---
+
+## X CAPITAL — 투자 인텔리전스 공간
+
+해양 대안데이터를 투자 관점으로 재해석하는 풀스크린 공간. StatusBar 💼 버튼으로 토글(`useStore.showXCapital`). 드라마 *Billions* 모티프의 3 페르소나가 각자 섹터 데스크를 맡아 LONG/SHORT/HOLD 시그널과 thesis를 제시.
+
+**페르소나 ↔ 데스크 ↔ 데이터 ↔ 종목** (key는 서버 `xcapData.DESKS`와 일치):
+
+| 페르소나(key) | 데스크 | 대표 항만 | 핵심 신호 | 운임 | 종목 |
+|---|---|---|---|---|---|
+| Bobby Axelrod(`axelrod`) | 컨테이너·해운 | busan·la_lb·rotterdam | 혼잡지수·컨테이너 입항(TEU) | KCCI | HMM·팬오션·대한해운 |
+| Taylor Mason(`taylor`) | 건화물·철강 | gwangyang·pohang·dangjin | 벌크 입항(DWT)·공식 철광석/유연탄 처리량 | KDCI | POSCO홀딩스·현대제철 |
+| Mike Wagner(`wagner`) | 에너지·정유 | ulsan·yeosu·gwangyang·singapore·rotterdam | 탱커 입항·원유 유입(DWT)·공식 원유/석유정제품 처리량 | BDTI(더티탱커) | S-Oil·GS·SK이노베이션 |
+
+> **데스크 항구 재배치(2026-06)**: Taylor·Wagner는 원래 중국 본토 항(상하이·칭다오·닝보)을 포함했으나 **무료 aisstream(지상 수신기) 커버리지가 0**이라(중국은 AIS 미공유, 한국 남해안도 수신기 공백) 국내 철강·정유 대표항으로 교체. 단 국내 산업항도 AIS는 희소 → **해양수산부 월별 공식 통계(korPortStats→kor_port_monthly)로 보완**한다. Wagner 운임은 케이프(벌크)→BDTI(더티탱커)로 교정(정유 데스크엔 탱커 운임이 맞음). portAnalyst PORTS에 ulsan·yeosu·pohang·dangjin 4개 국내항 추가(34개).
+
+**데이터 흐름**:
+```
+KOBC_SCRAPER(12h) → freight_history
+baselinesWriter(60분) → trafficAggregator(항만 혼잡·입항·원자재 유입) + baselines(혼잡 시계열) + dwellTracker(체류시간 → dwell_events)
+        ↓ xcapData.buildAllDesks()/buildDeskSeries()/dwellSignals()
+INVESTMENT_ANALYST(3시간, Haiku) → agent_reports.raw_data.desks=[정량+서술 3, dwell 포함]
+        ↓ Realtime + /api/xcap/desks·/api/xcap/desk-series
+XCapitalSpace.jsx → 3 페르소나 카드(혼잡·유입·체류·운임 칩 + 자세히) + 다지표 시계열 차트(혼잡·입항·유입·체류·운임)
+        + DeskDetailsModal(항구·운임지수 설명 + 실수치 시계열 표)
+```
+> 차트는 데스크 **전 항구를 합산**(buildDeskSeries)해 대표항 1곳만 쓰던 과거 버그(Taylor·Wagner 혼잡 라인 공백)를 해결. 입항=척수/유입=톤수·TEU 둘 다 토글, 지수(시작=100)/원본값 토글로 스케일 차이를 흡수.
+
+**체류시간(dwell) 신호**: `dwellSignals`가 `dwell_events`에서 항만군의 `avg_dwell_hours`·`turnover_per_day`(회전)·`trend_pct`·`pressure`(수요압력: 0.5·체류/24h·100 + 0.5·혼잡지수, 100=중립) 산출. 체류↑+혼잡↑=선석 포화→운임 강세 신호로 INVESTMENT_ANALYST 프롬프트에 투입. 마감 체류 <10건이면 demo·pressure=null.
+
+**해양수산부 공식 통계(월) 병합**: `korPortStats`가 `kor_port_monthly`에 적재한 **항만별 입항 척수(per-port)**·**전국 품목 처리량(철광석·유연탄·원유·석유정제품)**을 `korStatsForDesk`(카드 🇰🇷칩)·`buildDeskSeries`(차트 월 계단선 `korVessel`·`korCargo`)가 소비. 공식 통계는 2개월가량 지연 발행 → **캐리포워드**(최근 발행월 값을 이후 일자에 유지)로 차트에 표시. 일별 AIS 라인 + **월 계단 점선(청록 입항·분홍 화물)** 병합(`SERIES_META.step/official`). AIS가 0인 국내항도 공식 수치로 실데이터 확보. `kor_port_monthly`/`DATA_GO_KR_KEY` 없으면 demo.
+
+**데모 모드 (중요)**: 풀 구현이지만 데이터 축적이 필요한 신호는 충분한 표본 전까지 **데모/추정으로 자동 격하하고 화면에 명시**한다. 지표별 `mode` 플래그(`xcapData`가 계산, UI `ModeBadge`로 노출):
+- `live`(실시간): 운임(KOBC 백필로 즉시)·혼잡(동적 평년 `hasDynamic`)·유입(실시간 집계)
+- `estimate`(기준추정): 혼잡 평년이 하드코딩 기준값일 때
+- `demo`(축적 중): 혼잡↔운임 lag 상관(겹침<14일)·Δ흘수(draft_events<20표본)·체류시간(dwell_events<10건)
+- 글로벌 배지: 하나라도 demo면 "🟡 데모 모드 · 데이터 축적 중". `freight_history`/`draft_events`/`dwell_events` 테이블 미생성 시 운임·상관·흘수·체류가 모두 demo.
+
+**lag 상관**: `xcapData.lagCorrelation`이 일별 혼잡 시계열과 운임 시계열을 0~14일 시차로 Pearson 상관 → 최대 상관 lag/r. 겹침<14일이면 demo.
+
+> ※ X Capital은 거친 추정 기반 **실험적** 지표이며 투자 자문이 아니다. 페르소나는 *Billions* 모티프 창작 캐릭터.
 
 ---
 
@@ -354,6 +415,15 @@ node_modules/.bin/vite build   # npx vite 사용 금지 (vite@8 설치 문제)
 | `agent_reports` | 에이전트 보고 카드 (Realtime 활성화, anon 읽기 허용) |
 | `baselines` | 항만/초크포인트 **스칼라** 스냅샷 (waiting_ships·daily_throughput, 시계열 누적) |
 | `traffic_snapshots` | 항만/초크포인트 **분해** 스냅샷 (입출항·선종·기국·목적지·원자재 유입 추정, 60분, JSONB) — FLOW REPORTER 소스 |
+| `freight_history` | 운임·선가 지수 시계열 (KOBC 스크래핑, `(index_code, obs_date)` 유니크) — X CAPITAL 운임 소스 |
+| `draft_events` | 선박 입항/출항 흘수 변화(Δdraft) — X CAPITAL 화물량 추정용. **현재 미적재(빈 테이블) → 흘수 신호는 데모 모드.** 라이브 Δdraft 기록기는 후속 작업(AIS 적재 경로에 추가 예정) |
+| `port_presence` | 항만 체류 추적 open ledger (mmsi×port, first/last_seen·scans). dwellTracker가 매시 upsert(`port_presence_touch` RPC), 2.5h 미관측 시 dwell_events로 마감 후 삭제. 내부 작업 상태(anon 미노출) |
+| `dwell_events` | 마감된 항만 체류 1건(입항→출항, dwell_hours). X CAPITAL 회전속도·수요압력 신호 소스(dwellSignals·desk-series). 180일 TTL. 미생성 시 체류 신호는 데모 모드 |
+| `kor_port_monthly` | 해양수산부 월별 공식 통계(korPortStats). category=vessel(항만별 입항 척수, port_id=우리 id)·cargo(전국 품목 처리량, port_id='KR', item=품목코드). X CAPITAL 국내항 보완(korStats·korVessel/korCargo). 미생성 시 demo |
+
+> **freight_history·draft_events 미생성 시**: `supabase_schema.sql`의 해당 CREATE TABLE 블록을 SQL Editor에서 실행해야 함. 없으면 KOBC_SCRAPER upsert가 실패(`Could not find the table`)하고 INVESTMENT_ANALYST·`/api/xcap/*`는 **데모 모드**로 동작(혼잡·유입은 정상, 운임·상관·흘수만 '축적 중'). 생성 즉시 다음 스크래퍼 런에서 운임 1년치가 백필되어 LIVE 전환.
+
+> **port_presence·dwell_events·port_presence_touch 미생성 시**: `supabase_schema.sql`의 해당 블록(테이블 2개 + plpgsql 함수)을 SQL Editor에서 실행해야 함. 없으면 baselinesWriter가 1회 경고 후 dwell 추적을 조용히 skip(baselines·traffic은 정상)하고, 체류 신호(`dwell`·desk-series의 dwell 컬럼)는 **데모 모드**로 표시. 생성 후 baselinesWriter가 매시 present 선박을 적재하며, 입항 후 2.5h 이상 머문 선박이 출항하면 첫 dwell_events가 생긴다(수 시간 축적 필요).
 
 ### ships 테이블 주요 컬럼
 
@@ -390,7 +460,7 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 1. **mapbox-gl 번들 크기**: 프로덕션 빌드 시 ~2.3MB 경고. 해커톤 범위에서는 무시.
 2. **heading=511**: AIS 미수신값. `aisParser.js`에서 `null`로 처리.
 3. **에이전트 초기 CRITICAL 보고**: 서버 시작 직후 AIS 데이터가 적어 초크포인트 통과량이 0으로 집계됨. 30분~1시간 후 안정화.
-4. **MASTER_AGENT 역할 변경(severity 전담)**: 과거의 '긴급 시 타 에이전트 재실행' 로직은 제거됨(하위 에이전트도 1시간 배치). 지금은 최근 90분 하위 사실 보고를 종합해 severity만 판단한다. 시작 시 +120초 후 첫 기동.
+4. **MASTER_AGENT 역할 변경(severity 전담)**: 과거의 '긴급 시 타 에이전트 재실행' 로직은 제거됨(하위 에이전트도 3시간 배치). 지금은 최근 3.5시간 하위 사실 보고를 종합해 severity만 판단한다. 시작 시 +120초 후 첫 기동.
 5. **Render 콜드 스타트**: 무료 티어는 15분 비활성 후 슬립. UptimeRobot으로 30분마다 헬스체크 핑 설정 권장.
 6. **ships 테이블 미생성 시 선박 미표시**: `supabase_schema.sql` 전체를 Supabase SQL Editor에서 실행해야 함. `agent_reports`만 있고 `ships`가 없으면 지도에 선박이 나타나지 않음.
 7. **호르무즈 등 일부 해역 선박 공백**: aisstream.io 무료 티어는 지상 수신기 기반이라 페르시아만·홍해 등 일부 해역의 커버리지가 제한됨. 제재 회피 AIS 소등 선박은 수신 불가.

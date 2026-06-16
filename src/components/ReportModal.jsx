@@ -2,6 +2,7 @@ import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import useStore from '../store/useStore.js';
+import { fmtKst } from '../utils/time.js';
 
 function CharAvatar({ character }) {
   const [err, setErr] = useState(false);
@@ -69,7 +70,7 @@ const MD_COMPONENTS = {
 export default function ReportModal({ report, onClose }) {
   if (!report) return null;
 
-  const kst = new Date(report.created_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+  const kst = fmtKst(report.created_at);
   const character = report.raw_data?.character;
 
   const setSelectedRegion = useStore((s) => s.setSelectedRegion);

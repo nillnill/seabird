@@ -1,7 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { callClaude } = require('./claudeClient');
 
-const POLL_INTERVAL_MS = 60 * 60 * 1000;  // 1시간 (전 에이전트 1시간 배치로 통일)
+const POLL_INTERVAL_MS = 3 * 60 * 60 * 1000;  // 3시간 (전 에이전트 3시간 배치로 통일)
 
 // 감시 지점: 초크포인트 7곳 + 태풍·사이클론 다발 해역 6곳
 const WEATHER_POINTS = [

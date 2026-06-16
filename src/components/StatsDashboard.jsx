@@ -4,6 +4,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, ReferenceLine,
 } from 'recharts';
 import useStore from '../store/useStore.js';
+import { parseUtc } from '../utils/time.js';
 import { supabase } from '../utils/supabaseClient.js';
 import { normalizeDestination } from '../utils/destinationNormalizer.js';
 
@@ -277,7 +278,7 @@ export default function StatsDashboard() {
       };
     });
     reports.forEach(r => {
-      const age = now - new Date(r.created_at).getTime();
+      const age = now - parseUtc(r.created_at).getTime();
       const hoursAgo = Math.floor(age / 3600000);
       if (hoursAgo < 0 || hoursAgo > 23) return;
       const idx = 23 - hoursAgo;
@@ -333,7 +334,7 @@ export default function StatsDashboard() {
   // KPI 계산
   const todayCritical = useMemo(() => {
     const today = new Date().toDateString();
-    return reports.filter(r => r.severity === 'CRITICAL' && new Date(r.created_at).toDateString() === today).length;
+    return reports.filter(r => r.severity === 'CRITICAL' && parseUtc(r.created_at).toDateString() === today).length;
   }, [reports]);
 
   const busiestPort = useMemo(() => {

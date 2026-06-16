@@ -6,6 +6,7 @@ import ReportModal from './ReportModal.jsx';
 import FeedTabs, { TABS, reportInTab } from './FeedTabs.jsx';
 import FeedFilter from './FeedFilter.jsx';
 import CommanderInput from './CommanderInput.jsx';
+import { parseUtc } from '../utils/time.js';
 
 const TIME_MS = { '1h': 3600000, '6h': 21600000, '24h': 86400000, '7d': 604800000 };
 
@@ -21,7 +22,7 @@ export default function CommandFeed() {
     return reports.filter(
       (r) =>
         feedFilters.severities.includes(r.severity) &&
-        new Date(r.created_at).getTime() > cutoff
+        parseUtc(r.created_at).getTime() > cutoff
     );
   }, [reports, feedFilters.severities, feedFilters.timeRange]);
 

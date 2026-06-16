@@ -84,6 +84,10 @@ const useStore = create((set) => ({
   showStatsDashboard: false,
   toggleStatsDashboard: () => set((state) => ({ showStatsDashboard: !state.showStatsDashboard })),
 
+  // X Capital 투자 인텔리전스 공간
+  showXCapital: false,
+  toggleXCapital: () => set((state) => ({ showXCapital: !state.showXCapital })),
+
   // 인트로 페이지 (첫 방문 자동 + GNB 버튼)
   showIntro: false,
   openIntro: () => set({ showIntro: true }),

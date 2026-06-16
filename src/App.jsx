@@ -5,6 +5,7 @@ import StatusBar from './components/StatusBar.jsx';
 import ShipDetailPanel from './components/ShipDetailPanel.jsx';
 import RegionIntelPanel from './components/RegionIntelPanel.jsx';
 import StatsDashboard from './components/StatsDashboard.jsx';
+import XCapitalSpace from './components/XCapitalSpace.jsx';
 import IntroPage from './components/IntroPage.jsx';
 import useStore from './store/useStore.js';
 
@@ -13,7 +14,7 @@ const INTRO_SEEN_KEY = 'seabird_intro_seen_v1';
 const DEFAULT_REGION = { id: 'busan', name: '부산항', type: 'port', lat: 35.1028, lng: 129.0403 };
 
 export default function App() {
-  const { selectedShip, selectedRegion, openIntro, setSelectedRegion } = useStore();
+  const { selectedShip, selectedRegion, showXCapital, openIntro, setSelectedRegion } = useStore();
 
   // 첫 방문 시 인트로 1회 자동 노출 + 부산항 디폴트 선택(맵도 부산으로 센터링)
   useEffect(() => {
@@ -38,6 +39,7 @@ export default function App() {
         <CommandFeed />
       </div>
       <StatsDashboard />
+      {showXCapital && <XCapitalSpace />}
       <IntroPage />
     </div>
   );

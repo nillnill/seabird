@@ -4,7 +4,7 @@ const { resolveBaseline } = require('./baselineUtils');
 const { REGION_CHARACTERS } = require('../data/regionCharacters');
 
 // 각 초크포인트의 대표 캐릭터(역사 인물)가 1시간에 한 번 자기 해협의 '현재 통항 상황'을 1인칭으로 보고.
-const POLL_INTERVAL_MS = 60 * 60 * 1000;   // 1시간
+const POLL_INTERVAL_MS = 3 * 60 * 60 * 1000;   // 3시간
 const REPORT_TTL_MS = 50 * 60 * 1000;      // 50분 내 보고한 초크포인트 skip (재시작 중복 방지)
 const CLAUDE_CONCURRENCY = 4;
 

@@ -4,8 +4,8 @@ const { callClaude } = require('./claudeClient');
 // MASTER AGENT(사령관) — 유일하게 severity(WARNING/CRITICAL)를 판단하는 에이전트.
 // 하위 에이전트(PORT/CHOKEPOINT/WEATHER/COMMODITY/GEO/FLOW)는 전부 '사실'만 보고(INFO 고정)하고,
 // 마스터가 그 사실들(data_points의 현재값·평년·change_pct + 상관관계)을 종합해 위험도를 매긴다.
-const POLL_INTERVAL_MS = 60 * 60 * 1000;       // 1시간
-const REPORT_WINDOW_MS = 90 * 60 * 1000;       // 최근 90분 보고를 종합(시간당 배치를 넉넉히 포괄)
+const POLL_INTERVAL_MS = 3 * 60 * 60 * 1000;   // 3시간
+const REPORT_WINDOW_MS = 210 * 60 * 1000;      // 최근 3.5시간 보고를 종합(3시간 배치를 넉넉히 포괄)
 
 const SYSTEM_PROMPT = `You are MASTER AGENT (사령관), Seabird's top-level maritime intelligence coordinator and the ONLY agent that judges severity.
 

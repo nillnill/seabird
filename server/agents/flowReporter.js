@@ -5,7 +5,7 @@ const { PORTS } = require('./portAnalyst');
 // FLOW REPORTER — traffic_snapshots 이력에서 항만별 원자재 유입 '강도' 추세를 산출.
 // 유입 강도 = 입항(inbound) 선박의 추정 적재 톤수(스냅샷 순간값). 24h 평균을 직전 24h와 비교(DoD).
 // ※ 절대 톤수는 추정치(클래스 평균 DWT × 만재 가정)이므로 '추세·증감'에 의미를 둔다.
-const POLL_INTERVAL_MS = 60 * 60 * 1000; // 1시간 (전 에이전트 1시간 배치로 통일)
+const POLL_INTERVAL_MS = 3 * 60 * 60 * 1000; // 3시간 (전 에이전트 3시간 배치로 통일)
 
 const PORT_NAME = Object.fromEntries(PORTS.map(p => [p.id, p.name]));
 

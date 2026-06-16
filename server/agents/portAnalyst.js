@@ -5,7 +5,7 @@ const { REGION_CHARACTERS } = require('../data/regionCharacters');
 
 // 각 항구의 대표 캐릭터가 1시간에 한 번 자기 항구의 '현재 운영 상황'을 1인칭으로 보고한다.
 // (과거: 30개 항만을 한 보고로 묶어 분석. 지금: 항구별 캐릭터 보고 = 항구별 agent_reports 행)
-const POLL_INTERVAL_MS = 60 * 60 * 1000;        // 1시간
+const POLL_INTERVAL_MS = 3 * 60 * 60 * 1000;    // 3시간
 const REPORT_TTL_MS = 50 * 60 * 1000;           // 50분 내 이미 보고한 항구는 skip (재시작 중복 방지)
 const CLAUDE_CONCURRENCY = 5;                    // 동시 호출 제한 (rate limit 보호)
 
@@ -18,6 +18,7 @@ const HARDCODED_BASELINE = {
   shanghai: 150, ningbo: 90, portklang: 90, qingdao: 70, tianjin: 60,
   kaohsiung: 50, dubai: 40, mumbai: 40, xiamen: 40, laem_chabang: 35,
   hochiminhcity: 35, colombo: 30, gwangyang: 20, kobe: 15, vladivostok: 12,
+  ulsan: 60, yeosu: 30, pohang: 25, dangjin: 20, // X CAPITAL 철강·정유 데스크용 국내 산업항(추정 기준값)
 };
 
 const PORTS = [
@@ -51,6 +52,11 @@ const PORTS = [
   { id: 'colombo',         name: '콜롬보항',         lat: 6.94,    lng: 79.85,     radius_nm: 20 },
   { id: 'savannah',        name: '사바나항',         lat: 32.09,   lng: -81.09,    radius_nm: 15 },
   { id: 'hochiminhcity',   name: '호치민항',         lat: 10.76,   lng: 106.70,    radius_nm: 20 },
+  // 국내 산업항 — X CAPITAL 철강(Taylor)·정유(Wagner) 데스크용 (중국 본토 AIS 공백 대체)
+  { id: 'ulsan',           name: '울산항',           lat: 35.50,   lng: 129.39,    radius_nm: 14 }, // SK에너지·S-Oil 정유
+  { id: 'yeosu',           name: '여수항',           lat: 34.79,   lng: 127.72,    radius_nm: 12 }, // GS칼텍스 여수 정유
+  { id: 'pohang',          name: '포항항',           lat: 36.02,   lng: 129.44,    radius_nm: 12 }, // POSCO 포항제철
+  { id: 'dangjin',         name: '당진항',           lat: 36.97,   lng: 126.50,    radius_nm: 12 }, // 현대제철 당진
 ];
 
 const SYSTEM_PROMPT = `당신은 한 항구를 대표하는 역사적 인물입니다. 당신의 항구의 '지금 이 순간 운영 상황'을 1인칭으로 보고하세요.

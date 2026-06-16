@@ -72,7 +72,7 @@ export default function MapView() {
         'icon-image': 'ship-arrow',
         'icon-rotate': ['get', 'heading'],
         'icon-rotation-alignment': 'map',
-        'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.4, 8, 0.8],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 2, 0.6, 5, 0.7, 8, 0.9],
         'icon-allow-overlap': true,
       },
       paint: {

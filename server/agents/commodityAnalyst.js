@@ -1,7 +1,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const { callClaude } = require('./claudeClient');
 
-const POLL_INTERVAL_MS = 60 * 60 * 1000;  // 60분 (가격은 천천히 변동)
+const POLL_INTERVAL_MS = 3 * 60 * 60 * 1000;  // 3시간 (가격은 천천히 변동)
 
 const SYSTEM_PROMPT = `You are COMMODITY ANALYST, a maritime trade & freight market intelligence agent.
 

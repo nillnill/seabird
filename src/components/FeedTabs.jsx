@@ -11,6 +11,7 @@ export const TABS = [
   { id: 'weather',   label: '날씨',      icon: '🌪️', agents: ['WEATHER_AGENT'] },
   { id: 'region',    label: '지역',      icon: '🌐', agents: ['GEOPOLITICAL_LINKER'] },
   { id: 'cargo',     label: '화물',      icon: '📦', agents: ['CARGO_ESTIMATOR'] },
+  { id: 'invest',    label: '투자',      icon: '💼', agents: ['INVESTMENT_ANALYST'] },
 ];
 
 // 보고(agent_id)가 해당 탭에 속하는지 — 'all'은 항상 true.

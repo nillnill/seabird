@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import useStore from '../store/useStore.js';
+import { fmtKstTime } from '../utils/time.js';
 
 // 지역 캐릭터 아바타 — 이미지 실패 시 심볼/국기 이모지로 fallback
 function CharAvatar({ character, dim = 'w-10 h-10' }) {
@@ -35,6 +36,7 @@ const AGENT_CONFIG = {
   WEATHER_AGENT:       { icon: '🌪️', label: 'WEATHER' },
   COMMODITY_ANALYST:   { icon: '💹', label: 'COMMODITY' },
   FLOW_REPORTER:       { icon: '🛢️', label: 'FLOW' },
+  INVESTMENT_ANALYST:  { icon: '💼', label: 'X CAPITAL' },
   MASTER_AGENT:        { icon: '🧭', label: 'MASTER' },
 };
 
@@ -78,11 +80,7 @@ export default function ReportCard({ report, onClick }) {
   const borderColor = sev.borderColor;
   const bgColor = sev.bgColor;
 
-  const kstTime = new Date(report.created_at).toLocaleTimeString('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  const kstTime = fmtKstTime(report.created_at);
 
   const dataPoints = Array.isArray(report.data_points) ? report.data_points : [];
 

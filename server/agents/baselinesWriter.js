@@ -2,8 +2,10 @@ const { createClient } = require('@supabase/supabase-js');
 const { PORTS } = require('./portAnalyst');
 const { CHOKEPOINTS } = require('./chokepointWatcher');
 const { aggregatePort, aggregateChokepoint } = require('./trafficAggregator');
+const { trackPortDwell } = require('./dwellTracker');
 
-const POLL_INTERVAL_MS = 60 * 60 * 1000; // 60분 (무료 티어 Disk IO 절약 — 전 지역 집계가 회당 무겁다)
+// 60분 (무료 티어 Disk IO 절약). 데모 가속 시 env BASELINES_POLL_MS로 임시 단축 가능.
+const POLL_INTERVAL_MS = Number(process.env.BASELINES_POLL_MS) || 60 * 60 * 1000;
 
 // ※ 하드코딩 평년 기준값은 portAnalyst.js(HARDCODED_BASELINE)·chokepointWatcher.js가 단일 소스.
 //   baselinesWriter는 실측 스냅샷만 기록한다.
@@ -18,6 +20,7 @@ function getDb() {
 }
 
 let _warnedNoTrafficTable = false;
+let _warnedNoDwellTable = false;
 
 async function getAvg90d(db, locationId, metric, currentValue) {
   const cutoff90 = new Date(Date.now() - 90 * 24 * 3600000).toISOString();
@@ -44,7 +47,8 @@ async function insertTraffic(db, row) {
 
 async function snapshotBaselines() {
   const db = getDb();
-  let baseN = 0, trafN = 0;
+  let baseN = 0, trafN = 0, dwellClosed = 0;
+  const cycleNow = new Date(); // 전 항만이 동일 타임스탬프 공유 → dwell 임계 일관성
 
   for (const port of PORTS) {
     try {
@@ -55,6 +59,17 @@ async function snapshotBaselines() {
         current_value: agg.waiting_ships, avg_90d: avg90d,
       });
       baseN++;
+
+      // 체류시간 추적(presence ledger). 실패해도 baselines/traffic에 영향 없도록 격리.
+      try {
+        const r = await trackPortDwell(db, port.id, agg.present_ships ?? [], cycleNow);
+        dwellClosed += r.closed ?? 0;
+      } catch (de) {
+        if (!_warnedNoDwellTable) {
+          _warnedNoDwellTable = true;
+          console.warn(`[BASELINES_WRITER] dwell 추적 실패 — supabase_schema.sql의 port_presence·dwell_events·port_presence_touch를 먼저 생성하세요. (${de.message})`);
+        }
+      }
 
       if (agg.total_ships > 0) {
         const ok = await insertTraffic(db, {
@@ -96,7 +111,7 @@ async function snapshotBaselines() {
     }
   }
 
-  console.log(`[BASELINES_WRITER] baselines ${baseN}, traffic ${trafN}/${PORTS.length + CHOKEPOINTS.length} locations`);
+  console.log(`[BASELINES_WRITER] baselines ${baseN}, traffic ${trafN}/${PORTS.length + CHOKEPOINTS.length} locations, dwell closed ${dwellClosed}`);
 }
 
 function startBaselinesWriter() {

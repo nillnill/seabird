@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import useStore from '../store/useStore.js';
+import { fmtKstTime } from '../utils/time.js';
 
 const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
 
@@ -137,7 +138,7 @@ export default function PortStatsPanel() {
                         {r.severity}
                       </span>
                       <span className="text-[9px] text-sea-muted">
-                        {new Date(r.created_at).toLocaleTimeString('ko-KR', { timeZone: 'Asia/Seoul', hour: '2-digit', minute: '2-digit' })}
+                        {fmtKstTime(r.created_at)}
                       </span>
                     </div>
                     <p className="text-[10px] text-white leading-tight line-clamp-2">{r.title}</p>

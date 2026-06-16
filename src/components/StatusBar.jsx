@@ -27,7 +27,7 @@ function CpChip({ cpId, changePct, severity }) {
 }
 
 export default function StatusBar() {
-  const { wsStatus, shipCount, reports, toggleStatsDashboard, openIntro } = useStore();
+  const { wsStatus, shipCount, reports, toggleStatsDashboard, toggleXCapital, openIntro } = useStore();
   const { dot, label } = STATUS_CONFIG[wsStatus] ?? STATUS_CONFIG.DISCONNECTED;
 
   // 초크포인트별 최신 보고에서 비교 수치 추출
@@ -66,6 +66,13 @@ export default function StatusBar() {
           >
             <span>📊</span>
             <span>통계</span>
+          </button>
+          <button
+            onClick={toggleXCapital}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-amber-600/40 hover:border-amber-500/70 hover:bg-amber-900/20 text-amber-500/80 hover:text-amber-300 transition-colors"
+          >
+            <span>💼</span>
+            <span>X Capital</span>
           </button>
           <div className="flex items-center gap-1.5">
             <span className={`w-2 h-2 rounded-full ${dot}`} />
