@@ -44,46 +44,49 @@ export default function StatusBar() {
 
   return (
     <header className="border-b border-sea-border bg-sea-panel shrink-0">
-      <div className="flex items-center justify-between px-4 py-2">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold tracking-widest text-white">SEABIRD</span>
-          <span className="text-xs text-sea-muted hidden sm:block">AI eyes on every ocean</span>
+      <div className="flex items-center justify-between gap-2 px-2 sm:px-4 py-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <span className="text-sm font-semibold tracking-widest text-white shrink-0">SEABIRD</span>
+          <span className="text-xs text-sea-muted hidden md:block">AI eyes on every ocean</span>
         </div>
-        <div className="flex items-center gap-4 text-xs font-mono">
-          <span className="text-sea-muted">
-            <span className="text-white">{shipCount.toLocaleString()}</span> vessels
+        <div className="flex items-center gap-1.5 sm:gap-4 text-xs font-mono">
+          <span className="text-sea-muted shrink-0">
+            <span className="text-white">{shipCount.toLocaleString()}</span><span className="hidden sm:inline"> vessels</span>
           </span>
           <button
             onClick={openIntro}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-sea-border hover:border-blue-500/60 hover:bg-blue-900/20 text-sea-muted hover:text-blue-400 transition-colors"
+            aria-label="인트로"
+            className="flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1 rounded border border-sea-border hover:border-blue-500/60 hover:bg-blue-900/20 text-sea-muted hover:text-blue-400 transition-colors"
           >
             <span>📜</span>
-            <span>인트로</span>
+            <span className="hidden sm:inline">인트로</span>
           </button>
           <button
             onClick={toggleStatsDashboard}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-sea-border hover:border-blue-500/60 hover:bg-blue-900/20 text-sea-muted hover:text-blue-400 transition-colors"
+            aria-label="통계"
+            className="flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1 rounded border border-sea-border hover:border-blue-500/60 hover:bg-blue-900/20 text-sea-muted hover:text-blue-400 transition-colors"
           >
             <span>📊</span>
-            <span>통계</span>
+            <span className="hidden sm:inline">통계</span>
           </button>
           <button
             onClick={toggleXCapital}
-            className="flex items-center gap-1.5 px-2.5 py-1 rounded border border-amber-600/40 hover:border-amber-500/70 hover:bg-amber-900/20 text-amber-500/80 hover:text-amber-300 transition-colors"
+            aria-label="X Capital"
+            className="flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1 rounded border border-amber-600/40 hover:border-amber-500/70 hover:bg-amber-900/20 text-amber-500/80 hover:text-amber-300 transition-colors"
           >
             <span>💼</span>
-            <span>X Capital</span>
+            <span className="hidden sm:inline">X Capital</span>
           </button>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <span className={`w-2 h-2 rounded-full ${dot}`} />
-            <span className="text-sea-muted">{label}</span>
+            <span className="text-sea-muted hidden sm:inline">{label}</span>
           </div>
         </div>
       </div>
 
       {/* 초크포인트 비교 수치 라인 */}
       {cpComparisons.length > 0 && (
-        <div className="flex items-center gap-3 px-4 pb-1.5 text-[10px] font-mono overflow-x-auto">
+        <div className="flex items-center gap-3 px-2 sm:px-4 pb-1.5 text-[10px] font-mono overflow-x-auto">
           <span className="text-white/20 shrink-0">통과량</span>
           {cpComparisons.map(c => (
             <CpChip key={c.cpId} {...c} />

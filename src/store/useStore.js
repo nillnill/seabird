@@ -10,8 +10,11 @@ const useStore = create((set) => ({
   shipOverrides: {},
   setShipOverride: (mmsi, patch) =>
     set((state) => ({ shipOverrides: { ...state.shipOverrides, [mmsi]: { ...(state.shipOverrides[mmsi] || {}), ...patch } } })),
+  // 모바일 하단 탭 (지도/피드 전환) — md 미만에서만 의미. 선박·지역 선택 시 지도로 자동 전환.
+  mobileView: 'map',
+  setMobileView: (v) => set({ mobileView: v }),
   // 선박·지역 카드는 좌측에서 상호 배타 (하나 열면 다른 하나 닫힘)
-  setSelectedShip: (ship) => set(ship ? { selectedShip: ship, selectedRegion: null } : { selectedShip: null }),
+  setSelectedShip: (ship) => set(ship ? { selectedShip: ship, selectedRegion: null, mobileView: 'map' } : { selectedShip: null }),
   focusMap: (lat, lng, zoom = 8) => set({ mapCenter: [lng, lat], mapZoom: zoom }),
 
   // 지도 필터 (선종·국기·속도)
@@ -35,6 +38,7 @@ const useStore = create((set) => ({
     ? {
         selectedRegion: region,
         selectedShip: null,
+        mobileView: 'map',
         ...(Number.isFinite(region.lat) && Number.isFinite(region.lng)
           ? { mapCenter: [region.lng, region.lat], mapZoom: region.type === 'chokepoint' ? 6 : 9 }
           : {}),

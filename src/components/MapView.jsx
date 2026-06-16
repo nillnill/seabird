@@ -305,7 +305,7 @@ export default function MapView() {
         </div>
       )}
       {/* 맵 스타일 토글 — 선박 선택 시 좌측 카드에 가리지 않게 오른쪽으로 이동 */}
-      <div className={`absolute top-3 flex gap-1 z-10 transition-all duration-300 ${(selectedShip || selectedRegion) ? 'left-[27.5rem]' : 'left-3'}`}>
+      <div className={`absolute top-3 left-3 flex gap-1 z-10 transition-all duration-300 ${(selectedShip || selectedRegion) ? 'md:left-[27.5rem]' : 'md:left-3'}`}>
         {MAP_STYLES.map(s => (
           <button
             key={s.id}

@@ -75,7 +75,7 @@ export default function MapFilter() {
 
       {/* 패널 */}
       {open && (
-        <div className="absolute bottom-9 right-0 w-64 bg-black/90 border border-white/20 rounded-xl p-3 space-y-3 shadow-2xl backdrop-blur-sm">
+        <div className="absolute bottom-9 right-0 w-64 max-w-[calc(100vw-1.5rem)] bg-black/90 border border-white/20 rounded-xl p-3 space-y-3 shadow-2xl backdrop-blur-sm">
           {/* 선종 */}
           <div>
             <div className="flex items-center justify-between mb-1.5">

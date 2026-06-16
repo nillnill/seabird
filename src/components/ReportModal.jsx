@@ -96,7 +96,7 @@ export default function ReportModal({ report, onClose }) {
       onClick={onClose}
     >
       <div
-        className="bg-sea-panel border border-sea-border rounded-xl w-full max-w-2xl max-h-[82vh] flex flex-col overflow-hidden mx-4"
+        className="bg-sea-panel border border-sea-border rounded-xl w-full max-w-2xl max-h-[88vh] sm:max-h-[82vh] flex flex-col overflow-hidden mx-2 sm:mx-4"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 헤더 */}
@@ -135,7 +135,7 @@ export default function ReportModal({ report, onClose }) {
         </div>
 
         {/* 본문 */}
-        <div className="overflow-y-auto px-5 py-4">
+        <div className="overflow-y-auto px-3 sm:px-5 py-4">
           {report.detail ? (
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
               {report.detail}

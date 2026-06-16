@@ -341,7 +341,7 @@ export default function RegionIntelPanel() {
   const { character, stats, history } = data;
 
   return (
-    <div className="absolute top-3 left-3 bottom-3 z-40 w-[26rem] max-w-[calc(100%-1.5rem)] flex flex-col pointer-events-none">
+    <div className="fixed inset-x-2 bottom-14 h-[70vh] z-40 flex flex-col pointer-events-none md:absolute md:inset-x-auto md:bottom-3 md:top-3 md:left-3 md:h-auto md:w-[26rem] md:max-w-[calc(100%-1.5rem)]">
       {/* 패널 — 선박 상세와 동일한 좌측 떠 있는 카드 */}
       <div className="relative w-full h-full flex flex-col rounded-2xl overflow-hidden shadow-2xl border border-white/10 pointer-events-auto">
 

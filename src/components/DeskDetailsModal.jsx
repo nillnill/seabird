@@ -44,7 +44,7 @@ export default function DeskDetailsModal({ deskKey, seed, narrative, korStats, o
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={onClose}>
       <div
-        className="bg-sea-panel border border-sea-border rounded-xl w-full max-w-3xl max-h-[86vh] flex flex-col overflow-hidden mx-4"
+        className="bg-sea-panel border border-sea-border rounded-xl w-full max-w-3xl max-h-[88vh] sm:max-h-[86vh] flex flex-col overflow-hidden mx-2 sm:mx-4"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 헤더 */}
@@ -62,7 +62,7 @@ export default function DeskDetailsModal({ deskKey, seed, narrative, korStats, o
           <button onClick={onClose} className="text-sea-muted hover:text-white transition-colors text-lg leading-none ml-4 shrink-0">✕</button>
         </div>
 
-        <div className="overflow-y-auto px-5 py-4 space-y-4">
+        <div className="overflow-y-auto px-3 sm:px-5 py-4 space-y-4">
           {/* 전략 & 판단 근거 */}
           {(strat || narrative) && (
             <div className="rounded-lg border border-amber-500/25 bg-amber-950/10 p-3 space-y-2.5">

@@ -7,6 +7,7 @@ import RegionIntelPanel from './components/RegionIntelPanel.jsx';
 import StatsDashboard from './components/StatsDashboard.jsx';
 import XCapitalSpace from './components/XCapitalSpace.jsx';
 import IntroPage from './components/IntroPage.jsx';
+import MobileTabBar from './components/MobileTabBar.jsx';
 import useStore from './store/useStore.js';
 
 const INTRO_SEEN_KEY = 'seabird_intro_seen_v1';
@@ -30,7 +31,7 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-sea-bg overflow-hidden">
       <StatusBar />
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden relative">
         <div className="relative flex-1">
           <MapView />
           {selectedShip && <ShipDetailPanel />}
@@ -38,6 +39,7 @@ export default function App() {
         </div>
         <CommandFeed />
       </div>
+      <MobileTabBar />
       <StatsDashboard />
       {showXCapital && <XCapitalSpace />}
       <IntroPage />
