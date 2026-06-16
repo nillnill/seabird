@@ -23,3 +23,5 @@ services:
         sync: false
       - key: NEWSAPI_KEY
         sync: false
+      - key: DATA_GO_KR_KEY
+        sync: false
