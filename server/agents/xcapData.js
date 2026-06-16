@@ -34,7 +34,7 @@ const DESKS = [
     key: 'wagner', persona: 'Mike Wagner', desk: '에너지·정유',
     portIds: ['ulsan', 'yeosu', 'gwangyang', 'singapore', 'rotterdam'],
     inflowKey: 'est_liquid_dwt', inflowLabel: '원유·석유제품 입항(추정 DWT)', inflowUnit: 'DWT',
-    chartFreight: 'BDTI', chartFreightLabel: 'BDTI 더티탱커 운임지수',
+    chartFreight: 'BWET', chartFreightLabel: 'BWET 탱커운임 ETF',
     korItems: ['15', '16'], // 원유·석유정제품 (전국 처리량)
     equities: ['S-Oil', 'GS', 'SK이노베이션'],
   },

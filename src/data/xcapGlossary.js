@@ -23,9 +23,9 @@ export const FREIGHT_GLOSSARY = {
     name: 'CAPE · 케이프사이즈 일일용선료',
     desc: '최대형 건화물선(Capesize, ~18만 DWT)의 하루 용선료($/day). 철광석·석탄 대량 물동량에 민감해 원자재 사이클의 선행 지표로 본다.',
   },
-  BDTI: {
-    name: 'BDTI · 발틱 더티탱커 운임지수',
-    desc: '원유(더티 카고)를 싣는 유조선 운임을 나타내는 Baltic Dirty Tanker Index. 원유 해상 물동량·정유 마진과 직결돼 정유·탱커주의 핵심 운임 지표다. (출처: Baltic Exchange / investing.com)',
+  BWET: {
+    name: 'BWET · 탱커 운임 ETF (Breakwave Tanker Shipping)',
+    desc: '원유 탱커 운임 선물을 추종하는 상장 ETF로, 발틱 더티탱커(BDTI) 지수의 무료 프록시. 원유 해상 물동량·정유 마진과 직결돼 정유·탱커주의 운임 신호로 쓴다. (출처: Yahoo Finance)',
   },
 };
 
