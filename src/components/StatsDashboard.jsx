@@ -97,9 +97,20 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
+// Recharts는 CSS 브레이크포인트를 못 쓰므로 뷰포트 폭으로 모바일 판정 → 축 폭·여백·폰트 조정
+function useIsMobile(bp = 640) {
+  const [m, setM] = useState(typeof window !== 'undefined' && window.innerWidth < bp);
+  useEffect(() => {
+    const on = () => setM(window.innerWidth < bp);
+    window.addEventListener('resize', on);
+    return () => window.removeEventListener('resize', on);
+  }, [bp]);
+  return m;
+}
+
 function SectionCard({ title, children, className = '' }) {
   return (
-    <div className={`bg-sea-card border border-sea-border rounded-xl p-4 ${className}`}>
+    <div className={`bg-sea-card border border-sea-border rounded-xl p-3 sm:p-4 ${className}`}>
       <h3 className="text-xs font-mono text-sea-muted uppercase tracking-widest mb-3">{title}</h3>
       {children}
     </div>
@@ -124,6 +135,7 @@ export default function StatsDashboard() {
   const [selectedDest, setSelectedDest] = useState(null);
   const [boardMetric, setBoardMetric] = useState('daily_throughput'); // 초크포인트 기본 (이력 깔끔)
   const [board, setBoard] = useState([]);
+  const mb = useIsMobile(); // 모바일이면 가로막대 차트의 축 폭·여백 축소
 
   // 대시보드 열릴 때 Supabase에서 선박 목록 조회
   const fetchShips = useCallback(async () => {
@@ -351,17 +363,17 @@ export default function StatsDashboard() {
   return (
     <div className="fixed inset-0 z-50 bg-sea-bg/97 backdrop-blur-sm overflow-y-auto">
       {/* 헤더 */}
-      <div className="sticky top-0 z-10 bg-sea-panel border-b border-sea-border px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-mono font-bold tracking-widest text-white">📊 해양 통계 대시보드</span>
+      <div className="sticky top-0 z-10 bg-sea-panel border-b border-sea-border px-3 sm:px-6 py-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <span className="text-xs sm:text-sm font-mono font-bold tracking-widest text-white truncate">📊 통계 대시보드</span>
           {loading && (
-            <span className="text-[10px] font-mono text-sea-muted animate-pulse">데이터 로드 중...</span>
+            <span className="text-[10px] font-mono text-sea-muted animate-pulse shrink-0">로드 중...</span>
           )}
           {!loading && (
-            <span className="text-[10px] font-mono text-sea-muted">{ships.length.toLocaleString()}척 기준</span>
+            <span className="text-[10px] font-mono text-sea-muted shrink-0 hidden sm:inline">{ships.length.toLocaleString()}척 기준</span>
           )}
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <button
             onClick={fetchShips}
             className="text-[10px] font-mono text-sea-muted hover:text-white px-2 py-1 rounded border border-sea-border hover:border-white/30 transition-colors"
@@ -377,7 +389,7 @@ export default function StatsDashboard() {
         </div>
       </div>
 
-      <div className="max-w-screen-2xl mx-auto px-6 py-5 space-y-5">
+      <div className="max-w-screen-2xl mx-auto px-3 sm:px-6 py-5 space-y-5">
         {/* KPI 카드 4개 */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard
@@ -445,9 +457,9 @@ export default function StatsDashboard() {
 
           <SectionCard title="기국 Top 10">
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={flagTop10} layout="vertical" margin={{ left: 8, right: 24, top: 0, bottom: 0 }}>
+              <BarChart data={flagTop10} layout="vertical" margin={{ left: mb ? 2 : 8, right: mb ? 12 : 24, top: 0, bottom: 0 }}>
                 <XAxis type="number" tick={{ fill: '#64748B', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: 11 }} width={72} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: mb ? 9 : 11 }} width={mb ? 54 : 72} axisLine={false} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                 <Bar dataKey="count" name="선박 수" fill="#3B82F6" radius={[0, 3, 3, 0]} />
               </BarChart>
@@ -533,9 +545,9 @@ export default function StatsDashboard() {
         {portData.length > 0 && (
           <SectionCard title="항만 혼잡도 Top 10 (대기 선박 수)">
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={portData} layout="vertical" margin={{ left: 16, right: 48, top: 0, bottom: 0 }}>
+              <BarChart data={portData} layout="vertical" margin={{ left: mb ? 4 : 16, right: mb ? 16 : 48, top: 0, bottom: 0 }}>
                 <XAxis type="number" tick={{ fill: '#64748B', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: 10 }} width={80} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: mb ? 9 : 10 }} width={mb ? 60 : 80} axisLine={false} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                 <Bar dataKey="waiting" name="대기 선박" radius={[0, 3, 3, 0]}>
                   {portData.map((entry, i) => (
@@ -572,13 +584,13 @@ export default function StatsDashboard() {
             <p className="text-[11px] text-sea-muted font-mono py-10 text-center">이력 데이터 누적 중…</p>
           ) : (
             <ResponsiveContainer width="100%" height={Math.max(160, boardData.length * 30)}>
-              <BarChart data={boardData} layout="vertical" margin={{ left: 16, right: 24, top: 0, bottom: 0 }}>
+              <BarChart data={boardData} layout="vertical" margin={{ left: mb ? 4 : 16, right: mb ? 12 : 24, top: 0, bottom: 0 }}>
                 <XAxis
                   type="number" domain={[-150, 150]}
                   tickFormatter={(v) => `${v}%`}
                   tick={{ fill: '#64748B', fontSize: 10 }} axisLine={false} tickLine={false}
                 />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: 10 }} width={84} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: mb ? 9 : 10 }} width={mb ? 64 : 84} axisLine={false} tickLine={false} />
                 <Tooltip content={<BoardTooltip />} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
                 <ReferenceLine x={0} stroke="#334155" />
                 <Bar dataKey="pctClamped" name="편차" radius={[0, 3, 3, 0]}>
@@ -658,15 +670,15 @@ export default function StatsDashboard() {
                 <BarChart
                   data={destTop15}
                   layout="vertical"
-                  margin={{ left: 8, right: 40, top: 0, bottom: 0 }}
+                  margin={{ left: mb ? 2 : 8, right: mb ? 16 : 40, top: 0, bottom: 0 }}
                   onClick={(e) => e?.activePayload?.[0] && setSelectedDest(e.activePayload[0].payload.dest)}
                 >
                   <XAxis type="number" tick={{ fill: '#64748B', fontSize: 10 }} axisLine={false} tickLine={false} />
                   <YAxis
                     type="category"
                     dataKey="dest"
-                    tick={{ fill: '#94A3B8', fontSize: 10 }}
-                    width={100}
+                    tick={{ fill: '#94A3B8', fontSize: mb ? 9 : 10 }}
+                    width={mb ? 72 : 100}
                     axisLine={false}
                     tickLine={false}
                   />
@@ -689,9 +701,9 @@ export default function StatsDashboard() {
           <SectionCard title="목적지 국가 Top 10">
             <p className="text-[10px] font-mono text-sea-muted mb-2">AIS destination 자유텍스트를 정규화해 집계 (LOCODE·항구명 → 국가)</p>
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={destCountryTop} layout="vertical" margin={{ left: 8, right: 40, top: 0, bottom: 0 }}>
+              <BarChart data={destCountryTop} layout="vertical" margin={{ left: mb ? 2 : 8, right: mb ? 16 : 40, top: 0, bottom: 0 }}>
                 <XAxis type="number" tick={{ fill: '#64748B', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: 10 }} width={90} axisLine={false} tickLine={false} />
+                <YAxis type="category" dataKey="name" tick={{ fill: '#94A3B8', fontSize: mb ? 9 : 10 }} width={mb ? 68 : 90} axisLine={false} tickLine={false} />
                 <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255,255,255,0.06)' }} />
                 <Bar dataKey="count" name="선박 수" fill="#10B981" radius={[0, 3, 3, 0]} />
               </BarChart>
