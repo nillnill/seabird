@@ -71,14 +71,14 @@ async function fetchPortDensity(port, dt) {
   return { cells, aisSum: Math.round(aisSum), windows: TIME_WINDOWS.length };
 }
 
-// 발행 지연 → 최신 가용일 탐색: 최근 8개월의 2일자를 역순으로 한 항구(부산) 기준 비어있지 않은 날 찾기
-async function findLatestDate() {
-  const now = new Date();
-  for (let i = 0; i < 8; i++) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 2));
-    const dt = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}02`;
+const BACKFILL_MONTHS = 14; // 시계열용 — 최근 N개월(발행된 달만 적재)
+
+// 해당 월(YYYYMM)에 데이터가 있는 대표일 탐색(부산 단일 2h 윈도우로 확인). 없으면 null(미발행).
+async function findDayInMonth(ym) {
+  for (const day of ['15', '02', '20', '10']) {
+    const dt = ym + day;
     try {
-      const r = await fetchWindow(KOR_PORTS[0], dt, '08', '09'); // busan, 단일 2h 윈도우로 가용성만 확인
+      const r = await fetchWindow(KOR_PORTS[0], dt, '08', '09');
       if (r.cells > 0) return dt;
     } catch { /* 계속 */ }
   }
@@ -92,26 +92,33 @@ async function runGicomsStats() {
     return 0;
   }
   const db = getDb();
-  try {
-    const dt = await findLatestDate();
-    if (!dt) { if (!_warned) { _warned = true; console.warn('[GICOMS_STATS] 가용 데이터 없음(발행 지연?) — skip.'); } return 0; }
-    const ym = dt.slice(0, 6);
-    const rows = [];
-    for (const port of KOR_PORTS) {
-      try {
-        const { aisSum } = await fetchPortDensity(port, dt);
-        rows.push({ port_id: port.id, category: 'sea_density', item: 'all', period_ym: ym, value: aisSum, unit: 'AIS통항' });
-      } catch (e) { /* 개별 항구 실패 무시 */ }
-    }
-    if (!rows.length) return 0;
-    const { error } = await db.from('kor_port_monthly').upsert(rows, { onConflict: 'port_id,category,item,period_ym' });
-    if (error) { console.error('[GICOMS_STATS] upsert error:', error.message); return 0; }
-    console.log(`[GICOMS_STATS] ${rows.length} ports sea_density upserted (data date ${dt})`);
-    return rows.length;
-  } catch (err) {
-    if (!_warned) { _warned = true; console.warn(`[GICOMS_STATS] 실패(${err.message}).`); }
-    return 0;
+  // 이미 적재된 월은 skip(요청 절약). 첫 실행은 백필, 이후엔 신규 월만.
+  const { data: existing } = await db.from('kor_port_monthly').select('period_ym').eq('category', 'sea_density');
+  const haveYm = new Set((existing ?? []).map(r => r.period_ym));
+
+  const now = new Date();
+  let totalRows = 0, monthsFilled = 0;
+  for (let i = 0; i < BACKFILL_MONTHS; i++) {
+    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
+    const ym = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    if (haveYm.has(ym)) continue; // 이미 있음
+    try {
+      const dt = await findDayInMonth(ym);
+      if (!dt) continue; // 미발행 월
+      const rows = [];
+      for (const port of KOR_PORTS) {
+        try { const { aisSum } = await fetchPortDensity(port, dt); rows.push({ port_id: port.id, category: 'sea_density', item: 'all', period_ym: ym, value: aisSum, unit: 'AIS통항' }); }
+        catch { /* 개별 항구 실패 무시 */ }
+      }
+      if (rows.length) {
+        const { error } = await db.from('kor_port_monthly').upsert(rows, { onConflict: 'port_id,category,item,period_ym' });
+        if (!error) { totalRows += rows.length; monthsFilled++; console.log(`[GICOMS_STATS] ${ym}: ${rows.length} ports (date ${dt})`); }
+      }
+    } catch { /* 월 단위 실패 무시 */ }
   }
+  if (!monthsFilled && !haveYm.size && !_warned) { _warned = true; console.warn('[GICOMS_STATS] 가용 데이터 없음(발행 지연/키 확인).'); }
+  console.log(`[GICOMS_STATS] done — ${monthsFilled} new months, ${totalRows} rows (기존 ${haveYm.size}개월)`);
+  return totalRows;
 }
 
 function startGicomsStats() {

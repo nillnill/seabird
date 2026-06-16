@@ -402,7 +402,7 @@ export default function XCapitalSpace() {
       </div>
 
       {detailsKey && (
-        <DeskDetailsModal deskKey={detailsKey} seed={seriesCache[detailsKey]} narrative={narratives[detailsKey]} onClose={() => setDetailsKey(null)} />
+        <DeskDetailsModal deskKey={detailsKey} seed={seriesCache[detailsKey]} narrative={narratives[detailsKey]} korStats={quantByKey[detailsKey]?.korStats} onClose={() => setDetailsKey(null)} />
       )}
     </div>
   );

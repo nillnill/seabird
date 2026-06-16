@@ -42,5 +42,5 @@ export const SERIES_META = {
   korCargo:   { key: 'korCargo',   label: '공식 화물처리(월)', color: '#F472B6', axis: 'l', unitKey: 'korCargo', step: true, official: true },
 };
 
-// 차트 표시 순서
+// 차트 표시 순서 (해역 밀집도는 과거 월별이라 일별 차트가 아닌 자세히 모달의 월별 추세로 표시)
 export const SERIES_ORDER = ['congestion', 'inbound', 'inflow', 'dwell', 'freight', 'korVessel', 'korCargo'];

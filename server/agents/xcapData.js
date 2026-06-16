@@ -128,20 +128,25 @@ function sumByYm(rows) {
 async function korStatsForDesk(db, desk) {
   const korPorts = desk.portIds.filter(id => KOR_PORT_IDS.has(id));
   const items = desk.korItems ?? [];
-  const empty = { vessel_calls: null, vessel_mom: null, cargo: null, cargo_mom: null, cargo_label: null, sea_density: null, sea_density_ym: null, ports: korPorts, latest_ym: null, mode: 'demo' };
+  const empty = { vessel_calls: null, vessel_mom: null, cargo: null, cargo_mom: null, cargo_label: null, sea_density: null, sea_density_ym: null, sea_density_ports: [], sea_density_series: [], ports: korPorts, latest_ym: null, mode: 'demo' };
   if (!korPorts.length && !items.length) return empty;
 
   const [vesRes, cargoRes, seaRes] = await Promise.all([
     korPorts.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'vessel').eq('item', 'in').in('port_id', korPorts) : Promise.resolve({ data: [] }),
     items.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'cargo').eq('port_id', 'KR').in('item', items) : Promise.resolve({ data: [] }),
-    korPorts.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'sea_density').in('port_id', korPorts) : Promise.resolve({ data: [] }),
+    korPorts.length ? db.from('kor_port_monthly').select('port_id, period_ym, value').eq('category', 'sea_density').in('port_id', korPorts) : Promise.resolve({ data: [] }),
   ]);
   const ves = sumByYm(vesRes.data), carg = sumByYm(cargoRes.data), sea = sumByYm(seaRes.data);
   const yms = [...new Set([...Object.keys(ves), ...Object.keys(carg)])].sort();
   const latest = yms[yms.length - 1], prior = yms[yms.length - 2];
   const mom = (cur, pv) => (cur != null && pv ? Math.round(((cur - pv) / pv) * 1000) / 10 : null);
-  // 해역 통항 밀집도(GICOMS) — 최신 가용월 국내항 합
+  // 해역 통항 밀집도(GICOMS) — 최신 가용월 국내항 합 + 항구별 분해
   const seaYms = Object.keys(sea).sort(), seaYm = seaYms[seaYms.length - 1] ?? null;
+  const seaPorts = seaYm
+    ? (seaRes.data ?? []).filter(r => r.period_ym === seaYm)
+        .map(r => ({ port_id: r.port_id, value: Math.round(parseFloat(r.value)) }))
+        .sort((a, b) => b.value - a.value)
+    : [];
   if (!yms.length && !seaYm) return empty;
 
   return {
@@ -152,6 +157,8 @@ async function korStatsForDesk(db, desk) {
     cargo_label: items.map(c => KOR_CARGO_NAMES[c] ?? c).join('+') || null,
     sea_density: seaYm ? Math.round(sea[seaYm]) : null,
     sea_density_ym: seaYm,
+    sea_density_ports: seaPorts,
+    sea_density_series: Object.entries(sea).sort((a, b) => a[0].localeCompare(b[0])).map(([ym, v]) => ({ ym, value: Math.round(v) })),
     ports: korPorts,
     latest_ym: latest ?? null,
     mode: (Object.keys(ves).length || Object.keys(carg).length || seaYm) ? 'live' : 'demo',
@@ -336,13 +343,14 @@ async function buildDeskSeries(db, desk, ports, days = 30) {
   // 해양수산부 월별 공식 통계 — 국내항 입항 척수 + 전국 품목 처리량(월별 → 일별 계단 forward-fill)
   const korPorts = portIds.filter(id => KOR_PORT_IDS.has(id));
   const korItems = desk.korItems ?? [];
-  const [korVesRes, korCargRes] = await Promise.all([
+  const [korVesRes, korCargRes, korSeaRes] = await Promise.all([
     korPorts.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'vessel').eq('item', 'in').in('port_id', korPorts) : Promise.resolve({ data: [] }),
     korItems.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'cargo').eq('port_id', 'KR').in('item', korItems) : Promise.resolve({ data: [] }),
+    korPorts.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'sea_density').in('port_id', korPorts) : Promise.resolve({ data: [] }),
   ]);
-  const korVesByYm = sumByYm(korVesRes.data), korCargByYm = sumByYm(korCargRes.data);
+  const korVesByYm = sumByYm(korVesRes.data), korCargByYm = sumByYm(korCargRes.data), korSeaByYm = sumByYm(korSeaRes.data);
   // 공식 통계는 2개월가량 지연 발행 → 그 달 값이 없으면 최근 발행월 값을 캐리포워드(최신 공식 수치 유지)
-  const korVesMonths = Object.keys(korVesByYm).sort(), korCargMonths = Object.keys(korCargByYm).sort();
+  const korVesMonths = Object.keys(korVesByYm).sort(), korCargMonths = Object.keys(korCargByYm).sort(), korSeaMonths = Object.keys(korSeaByYm).sort();
   const carryFwd = (map, months, ym) => { let v = null; for (const mo of months) { if (mo <= ym) v = map[mo]; else break; } return v; };
 
   const dates = new Set([
@@ -360,13 +368,14 @@ async function buildDeskSeries(db, desk, ports, days = 30) {
       freight: frByDay[date] ?? null,
       korVessel: carryFwd(korVesByYm, korVesMonths, ym),   // 월 계단(공식 입항 척수, 캐리포워드)
       korCargo: carryFwd(korCargByYm, korCargMonths, ym),  // 월 계단(전국 품목 처리량, 캐리포워드)
+      seaDensity: carryFwd(korSeaByYm, korSeaMonths, ym),  // 월 계단(GICOMS 해역 통항 밀집도, 캐리포워드)
     };
   });
 
   const korCargoLabel = korItems.map(c => KOR_CARGO_NAMES[c] ?? c).join('+') || null;
   return {
     key: desk.key, days, ports: portIds, series,
-    units: { congestion: '척', inbound: '척', inflow: desk.inflowUnit, dwell: 'h', freight: freight.unit || 'pt', korVessel: '척/월', korCargo: 'R/T·월' },
+    units: { congestion: '척', inbound: '척', inflow: desk.inflowUnit, dwell: 'h', freight: freight.unit || 'pt', korVessel: '척/월', korCargo: 'R/T·월', seaDensity: 'AIS/월' },
     freight: { code: desk.chartFreight, label: desk.chartFreightLabel, unit: freight.unit || 'pt' },
     korCargoLabel,
     modes: {
@@ -377,6 +386,7 @@ async function buildDeskSeries(db, desk, ports, days = 30) {
       freight: freight.mode,
       korVessel: Object.keys(korVesByYm).length ? 'live' : 'demo',
       korCargo: Object.keys(korCargByYm).length ? 'live' : 'demo',
+      seaDensity: Object.keys(korSeaByYm).length ? 'live' : 'demo',
     },
   };
 }

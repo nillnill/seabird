@@ -10,9 +10,13 @@ const fmtNum = (n) => (n == null ? '–' : Number(n).toLocaleString());
 // X CAPITAL 데스크 "자세히" — 항구·운임지수 설명 + 실수치 시계열 표.
 const SIGNAL_COLOR = { LONG: 'text-green-400', SHORT: 'text-red-400', HOLD: 'text-slate-300' };
 
-export default function DeskDetailsModal({ deskKey, seed, narrative, onClose }) {
+export default function DeskDetailsModal({ deskKey, seed, narrative, korStats, onClose }) {
   const p = INVESTMENT_PERSONAS[deskKey];
   const strat = p?.strategy;
+  const seaPorts = korStats?.sea_density_ports ?? [];
+  const seaSeries = korStats?.sea_density_series ?? [];
+  const seaMax = Math.max(1, ...seaSeries.map(s => s.value));
+  const seaYm = korStats?.sea_density_ym ? `${korStats.sea_density_ym.slice(0, 4)}.${korStats.sea_density_ym.slice(4)}` : '';
   const [data, setData] = useState(seed ?? null);
   const [loading, setLoading] = useState(!seed);
 
@@ -132,6 +136,43 @@ export default function DeskDetailsModal({ deskKey, seed, narrative, onClose }) 
               <div className="rounded-lg border border-white/10 bg-black/30 p-3">
                 <p className="text-[11px] font-semibold text-white/80">{FREIGHT_GLOSSARY[freightCode].name}</p>
                 <p className="text-[10px] text-white/55 leading-relaxed mt-1">{FREIGHT_GLOSSARY[freightCode].desc}</p>
+              </div>
+            )}
+
+            {/* 해역 통항 밀집도 (GICOMS) */}
+            {seaPorts.length > 0 && (
+              <div className="rounded-lg border border-cyan-500/25 bg-cyan-950/10 p-3">
+                <div className="flex items-center justify-between gap-2 mb-1.5">
+                  <p className="text-[11px] font-semibold text-cyan-200/90">🌊 해역 통항 밀집도 (GICOMS)</p>
+                  <span className="text-[9px] text-white/40 font-mono">기준 {seaYm} · 합계 {fmtNum(korStats?.sea_density)}</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-1.5">
+                  {seaPorts.map((sp) => (
+                    <div key={sp.port_id} className="flex items-center justify-between gap-1 bg-black/30 rounded px-2 py-1">
+                      <span className="text-[10px] text-white/70">{PORT_KO[sp.port_id] ?? sp.port_id}</span>
+                      <span className="text-[10px] font-mono text-cyan-200/80">{fmtNum(sp.value)}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 월별 추세 (시계열) */}
+                {seaSeries.length > 1 && (
+                  <div className="mb-1.5">
+                    <p className="text-[9px] text-white/40 uppercase tracking-widest mb-1">월별 추세</p>
+                    <div className="flex items-end gap-1 h-16">
+                      {seaSeries.map((s) => (
+                        <div key={s.ym} className="flex-1 flex flex-col items-center gap-0.5 group" title={`${s.ym}: ${fmtNum(s.value)}`}>
+                          <span className="text-[8px] font-mono text-cyan-200/70 opacity-0 group-hover:opacity-100 transition-opacity">{fmtNum(s.value)}</span>
+                          <div className="w-full rounded-t bg-cyan-400/60 hover:bg-cyan-300" style={{ height: `${Math.max(4, (s.value / seaMax) * 100)}%` }} />
+                          <span className="text-[8px] text-white/35 font-mono">{s.ym.slice(2, 4)}.{s.ym.slice(4)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <p className="text-[10px] text-white/45 leading-relaxed">
+                  해양수산부 GICOMS 연안 AIS 통계 — 항구 해역(±40km) 격자의 통항 수 합산. aisstream이 못 잡는 국내 연안의 통항 밀집도를 공식 데이터로 보완(과거 기준월).
+                </p>
               </div>
             )}
           </div>
