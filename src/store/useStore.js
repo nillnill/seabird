@@ -91,6 +91,7 @@ const useStore = create((set) => ({
   // 서비스 소개 발표자료(PDF) 모달
   showDeck: false,
   toggleDeck: () => set((state) => ({ showDeck: !state.showDeck })),
+  openDeck: () => set({ showDeck: true }), // /소개 경로 등에서 idempotent 오픈
 
   // X Capital 투자 인텔리전스 공간
   showXCapital: false,
