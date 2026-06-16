@@ -68,6 +68,7 @@ seabird/
 │   │   ├── xcapData.js        ← X CAPITAL 데스크 집계 공유 모듈 buildAllDesks()/buildDeskSeries()/dwellSignals()/lagCorrelation()/freightSeries(). 3 데스크(axelrod/taylor/wagner) 정량 신호 + dwell(체류시간) 신호 + 지표별 mode 플래그(live/estimate/demo). buildDeskSeries=데스크 전 항구 합산 일별 시계열(혼잡·입항·유입·체류·운임, /api/xcap/desk-series). /api/xcap/* + investmentAnalyst 공용
 │   │   ├── tankerScraper.js   ← BDTI(발틱 더티탱커) 운임 → freight_history(Wagner 정유 데스크). investing.com은 서버 Cloudflare 403이라 best-effort+demo 폴백. env BDTI_FETCH_URL(프록시)로 라이브 가능
 │   │   ├── korPortStats.js    ← 해양수산부 공공데이터(data.go.kr) 월별 공식 통계 → kor_port_monthly. SsopVsslEtryndHarbor2(항만별 입출항, per-port)·SsopCargFrghtPrdlst2(품목별 화물처리, 전국). AIS 사각지대 국내 철강·정유항(광양·포항·당진·울산·여수) 보완. env DATA_GO_KR_KEY, 12h 폴링, sym/eym(YYYYMM) 13개월 백필
+│   │   ├── gicomsStats.js     ← GICOMS(해양안전종합정보시스템) 연안 AIS WFS → kor_port_monthly(category='sea_density'). lage_ship_stats_view(대해구 격자×일×시 AIS수)를 항구 BBOX(EPSG:3857)로 좁혀 ais 합산=해역 통항 밀집도. env GICOMS_API_KEY+domain=seabird.onrender.com(등록 도메인, 쿼리파라미터). ⚠️ ship_time은 최대 2h 단위(2h 윈도우 3개 샘플 합산), 데이터 ~수개월 지연(최신 ~2026-01), GML 응답. X CAPITAL 카드 '해역밀집'
 │   │   ├── dwellTracker.js    ← 항만 체류시간 저비용 추적. baselinesWriter 매시 스캔에 올라타 정박·대기(≤2kn) 선박을 port_presence(open ledger)에 upsert(port_presence_touch RPC), 2.5h 미관측 시 dwell_events로 마감. ship_positions(2h TTL) 미사용 → 비용 거의 0. recordPresence/closeStaleVisits/trackPortDwell/cleanupDwellEvents
 │   │   ├── investmentAnalyst.js ← 3시간 폴링, Haiku, X CAPITAL 9번째 에이전트. xcapData + 시황 종합 → 페르소나별 투자 시그널. raw_data.desks 병합
 │   │   └── baselinesWriter.js ← 60분 적재(데이터 writer — 보고 아님), aggregator로 전 지역 1회 집계 → baselines(스칼라)+traffic_snapshots(분해) 동시 적재 + dwellTracker.trackPortDwell 호출(전 항구 동일 cycleNow 공유) (무료 티어 Disk IO 절약 위해 30→60분)
@@ -231,6 +232,7 @@ Node.js 서버 (포트 3001)
 - 7000ms: KOBC SCRAPER (운임·선가 → freight_history)
 - 7500ms: TANKER SCRAPER (BDTI 더티탱커 → freight_history)
 - 8000ms: KOR PORT STATS (해양수산부 월별 공식 통계 → kor_port_monthly)
+- 8500ms: GICOMS STATS (연안 AIS 해역 밀집도 → kor_port_monthly.sea_density)
 - 20000ms: INVESTMENT ANALYST (운임 백필 + 첫 항만 집계 후 기동)
 - 120000ms: MASTER AGENT (하위 사실 보고가 쌓일 시간을 두고 기동 → severity 판단)
 
@@ -381,8 +383,11 @@ SUPABASE_SERVICE_ROLE_KEY=eyJ...
 NEWSAPI_KEY=...
 ANTHROPIC_API_KEY=sk-ant-...   ← 에이전트가 서버에서 사용
 PERPLEXITY_API_KEY=pplx-...    ← 지역 뉴스 영문 검색용
+DATA_GO_KR_KEY=...             ← 해양수산부 공공데이터(data.go.kr) 항만 입출항·화물 통계
+GICOMS_API_KEY=...             ← GICOMS 연안 AIS 해역 밀집도 (등록 도메인 seabird.onrender.com)
 PORT=3001
 ```
+> `DATA_GO_KR_KEY`·`GICOMS_API_KEY`는 Render에도 동일 설정 필요(render.yaml `sync:false`로 선언). GICOMS는 발급 시 등록한 도메인(seabird.onrender.com)을 쿼리 `domain` 파라미터로 넘기므로 로컬에서도 동작.
 
 ---
 
@@ -419,7 +424,7 @@ node_modules/.bin/vite build   # npx vite 사용 금지 (vite@8 설치 문제)
 | `draft_events` | 선박 입항/출항 흘수 변화(Δdraft) — X CAPITAL 화물량 추정용. **현재 미적재(빈 테이블) → 흘수 신호는 데모 모드.** 라이브 Δdraft 기록기는 후속 작업(AIS 적재 경로에 추가 예정) |
 | `port_presence` | 항만 체류 추적 open ledger (mmsi×port, first/last_seen·scans). dwellTracker가 매시 upsert(`port_presence_touch` RPC), 2.5h 미관측 시 dwell_events로 마감 후 삭제. 내부 작업 상태(anon 미노출) |
 | `dwell_events` | 마감된 항만 체류 1건(입항→출항, dwell_hours). X CAPITAL 회전속도·수요압력 신호 소스(dwellSignals·desk-series). 180일 TTL. 미생성 시 체류 신호는 데모 모드 |
-| `kor_port_monthly` | 해양수산부 월별 공식 통계(korPortStats). category=vessel(항만별 입항 척수, port_id=우리 id)·cargo(전국 품목 처리량, port_id='KR', item=품목코드). X CAPITAL 국내항 보완(korStats·korVessel/korCargo). 미생성 시 demo |
+| `kor_port_monthly` | 해양수산부 월별 공식 통계(korPortStats) + GICOMS 해역 밀집도(gicomsStats). category=vessel(항만별 입항 척수)·cargo(전국 품목, port_id='KR')·**sea_density**(GICOMS 항구 해역 AIS 통항 합, port_id=우리 id). X CAPITAL 국내항 보완(korStats·korVessel/korCargo·sea_density). 미생성 시 demo |
 
 > **freight_history·draft_events 미생성 시**: `supabase_schema.sql`의 해당 CREATE TABLE 블록을 SQL Editor에서 실행해야 함. 없으면 KOBC_SCRAPER upsert가 실패(`Could not find the table`)하고 INVESTMENT_ANALYST·`/api/xcap/*`는 **데모 모드**로 동작(혼잡·유입은 정상, 운임·상관·흘수만 '축적 중'). 생성 즉시 다음 스크래퍼 런에서 운임 1년치가 백필되어 LIVE 전환.
 

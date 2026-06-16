@@ -20,6 +20,7 @@ const { startMasterAgent } = require('./agents/masterAgent');
 const { startKobcScraper } = require('./agents/kobcScraper');
 const { startTankerScraper } = require('./agents/tankerScraper');
 const { startKorPortStats } = require('./agents/korPortStats');
+const { startGicomsStats } = require('./agents/gicomsStats');
 const { startInvestmentAnalyst } = require('./agents/investmentAnalyst');
 const { buildAllDesks, freightSeries, buildDeskSeries, DESKS } = require('./agents/xcapData');
 const { cleanupDwellEvents } = require('./agents/dwellTracker');
@@ -387,6 +388,7 @@ setTimeout(() => startFlowReporter(),      6500);
 setTimeout(() => startKobcScraper(),       7000);  // KOBC 운임·선가 스크래핑 → freight_history
 setTimeout(() => startTankerScraper(),     7500);  // BDTI 더티탱커 운임 → freight_history (Wagner 정유 데스크)
 setTimeout(() => startKorPortStats(),      8000);  // 해양수산부 월별 공식 통계 → kor_port_monthly (국내항 보완)
+setTimeout(() => startGicomsStats(),       8500);  // GICOMS 연안 AIS 해역 밀집도 → kor_port_monthly(sea_density)
 // INVESTMENT_ANALYST는 항만 집계 + freight_history를 종합 → 운임 백필 + 첫 집계 후 기동
 setTimeout(() => startInvestmentAnalyst(), 20000);
 // MASTER는 하위 '사실' 보고를 종합해 severity를 판단 → 첫 배치가 쌓일 시간을 두고 120초 후 기동

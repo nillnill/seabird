@@ -121,6 +121,7 @@ function PersonaCard({ deskKey, quant, narrative, selected, onSelect, onDetails 
             <span className="text-[10px] font-mono text-white/85 truncate text-right">
               {kor.vessel_calls != null && <>입항 {fmt(kor.vessel_calls)}척{momTxt(kor.vessel_mom)}</>}
               {kor.cargo != null && <span className="text-white/55"> · {kor.cargo_label} {fmt(Math.round(kor.cargo / 10000))}만{momTxt(kor.cargo_mom)}</span>}
+              {kor.sea_density != null && <span className="text-cyan-200/70"> · 해역밀집 {fmt(kor.sea_density)}</span>}
             </span>
           </div>
         )}

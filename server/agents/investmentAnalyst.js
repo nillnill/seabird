@@ -53,7 +53,7 @@ function quantForPrompt(d) {
     correlation: d.correlation,
     draft: d.draft,
     dwell: { avg_hours: d.dwell.avg_hours, turnover_per_day: d.dwell.turnover_per_day, trend_pct: d.dwell.trend_pct, pressure: d.dwell.pressure, mode: d.dwell.mode },
-    kor_official: d.korStats ? { vessel_calls: d.korStats.vessel_calls, vessel_mom: d.korStats.vessel_mom, cargo: d.korStats.cargo, cargo_mom: d.korStats.cargo_mom, cargo_label: d.korStats.cargo_label, ym: d.korStats.latest_ym, mode: d.korStats.mode } : null,
+    kor_official: d.korStats ? { vessel_calls: d.korStats.vessel_calls, vessel_mom: d.korStats.vessel_mom, cargo: d.korStats.cargo, cargo_mom: d.korStats.cargo_mom, cargo_label: d.korStats.cargo_label, sea_density: d.korStats.sea_density, ym: d.korStats.latest_ym, mode: d.korStats.mode } : null,
   };
 }
 

@@ -25,3 +25,5 @@ services:
         sync: false
       - key: DATA_GO_KR_KEY
         sync: false
+      - key: GICOMS_API_KEY
+        sync: false

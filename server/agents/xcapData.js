@@ -128,18 +128,21 @@ function sumByYm(rows) {
 async function korStatsForDesk(db, desk) {
   const korPorts = desk.portIds.filter(id => KOR_PORT_IDS.has(id));
   const items = desk.korItems ?? [];
-  const empty = { vessel_calls: null, vessel_mom: null, cargo: null, cargo_mom: null, cargo_label: null, ports: korPorts, latest_ym: null, mode: 'demo' };
+  const empty = { vessel_calls: null, vessel_mom: null, cargo: null, cargo_mom: null, cargo_label: null, sea_density: null, sea_density_ym: null, ports: korPorts, latest_ym: null, mode: 'demo' };
   if (!korPorts.length && !items.length) return empty;
 
-  const [vesRes, cargoRes] = await Promise.all([
+  const [vesRes, cargoRes, seaRes] = await Promise.all([
     korPorts.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'vessel').eq('item', 'in').in('port_id', korPorts) : Promise.resolve({ data: [] }),
     items.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'cargo').eq('port_id', 'KR').in('item', items) : Promise.resolve({ data: [] }),
+    korPorts.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'sea_density').in('port_id', korPorts) : Promise.resolve({ data: [] }),
   ]);
-  const ves = sumByYm(vesRes.data), carg = sumByYm(cargoRes.data);
+  const ves = sumByYm(vesRes.data), carg = sumByYm(cargoRes.data), sea = sumByYm(seaRes.data);
   const yms = [...new Set([...Object.keys(ves), ...Object.keys(carg)])].sort();
-  if (!yms.length) return empty;
   const latest = yms[yms.length - 1], prior = yms[yms.length - 2];
   const mom = (cur, pv) => (cur != null && pv ? Math.round(((cur - pv) / pv) * 1000) / 10 : null);
+  // 해역 통항 밀집도(GICOMS) — 최신 가용월 국내항 합
+  const seaYms = Object.keys(sea).sort(), seaYm = seaYms[seaYms.length - 1] ?? null;
+  if (!yms.length && !seaYm) return empty;
 
   return {
     vessel_calls: ves[latest] ?? null,
@@ -147,9 +150,11 @@ async function korStatsForDesk(db, desk) {
     cargo: carg[latest] ?? null,
     cargo_mom: mom(carg[latest], prior ? carg[prior] : null),
     cargo_label: items.map(c => KOR_CARGO_NAMES[c] ?? c).join('+') || null,
+    sea_density: seaYm ? Math.round(sea[seaYm]) : null,
+    sea_density_ym: seaYm,
     ports: korPorts,
-    latest_ym: latest,
-    mode: (Object.keys(ves).length || Object.keys(carg).length) ? 'live' : 'demo',
+    latest_ym: latest ?? null,
+    mode: (Object.keys(ves).length || Object.keys(carg).length || seaYm) ? 'live' : 'demo',
   };
 }
 
