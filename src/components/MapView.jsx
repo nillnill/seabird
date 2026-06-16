@@ -63,16 +63,32 @@ export default function MapView() {
     ctx.fill();
     map.addImage('ship-arrow', { width: size, height: size, data: ctx.getImageData(0, 0, size, size).data }, { sdf: true });
 
-    // 선박 레이어
+    // 베이스 원형 레이어 — SDF가 아니라 어느 줌에서도 또렷(저줌 가시성 보장). 화살표보다 먼저 add.
+    map.addLayer({
+      id: 'ships-dot',
+      type: 'circle',
+      source: 'ships',
+      paint: {
+        'circle-color': VESSEL_COLORS,
+        'circle-radius': ['interpolate', ['linear'], ['zoom'], 2, 2.2, 6, 3.2, 12, 5],
+        'circle-opacity': 0.9,
+        'circle-stroke-width': 0.6,
+        'circle-stroke-color': 'rgba(0,0,0,0.5)',
+      },
+    });
+
+    // 화살표 심볼 — 고줌(≥6)에서만 방향 표시용으로 점 위에 겹쳐 그림.
+    // (SDF 아이콘은 저줌 축소 시 거리장 픽셀 부족으로 사라지므로 minzoom으로 제한)
     map.addLayer({
       id: 'ships-layer',
       type: 'symbol',
       source: 'ships',
+      minzoom: 6,
       layout: {
         'icon-image': 'ship-arrow',
         'icon-rotate': ['get', 'heading'],
         'icon-rotation-alignment': 'map',
-        'icon-size': ['interpolate', ['linear'], ['zoom'], 2, 0.6, 5, 0.7, 8, 0.9],
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 6, 0.8, 10, 1.0],
         'icon-allow-overlap': true,
       },
       paint: {
@@ -81,14 +97,18 @@ export default function MapView() {
       },
     });
 
-    map.on('click', 'ships-layer', (e) => {
+    // 클릭·호버 — 점·화살표 두 레이어 모두에 등록(저줌에서 점 클릭도 동작)
+    const onShipClick = (e) => {
       if (!e.features.length) return;
       const props = e.features[0].properties;
       const coords = e.features[0].geometry.coordinates;
       setSelectedShip({ ...props, lat: coords[1], lng: coords[0] });
+    };
+    ['ships-dot', 'ships-layer'].forEach((id) => {
+      map.on('click', id, onShipClick);
+      map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
     });
-    map.on('mouseenter', 'ships-layer', () => { map.getCanvas().style.cursor = 'pointer'; });
-    map.on('mouseleave', 'ships-layer', () => { map.getCanvas().style.cursor = ''; });
 
     // ChokepointMarker 및 PortMarker 초기화
     if (markersRef.current) markersRef.current.destroy?.();
@@ -205,7 +225,7 @@ export default function MapView() {
   // 지도 필터 적용
   useEffect(() => {
     const map = mapRef.current;
-    if (!map?.getLayer('ships-layer')) return;
+    if (!map?.getLayer('ships-dot')) return;
 
     const { vesselTypes, flagCountries, speedMax } = mapFilters;
     const filterParts = ['all'];
@@ -220,7 +240,8 @@ export default function MapView() {
       filterParts.push(['<=', ['to-number', ['get', 'speed'], 0], speedMax]);
     }
 
-    map.setFilter('ships-layer', filterParts);
+    map.setFilter('ships-dot', filterParts);
+    if (map.getLayer('ships-layer')) map.setFilter('ships-layer', filterParts);
   }, [mapFilters]);
 
   // 선박 경로 표시 (선 + 시작/현재 점 + 자동 화면 맞춤)
