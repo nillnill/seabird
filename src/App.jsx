@@ -10,6 +10,7 @@ import IntroPage from './components/IntroPage.jsx';
 import MobileTabBar from './components/MobileTabBar.jsx';
 import DeckModal from './components/DeckModal.jsx';
 import GuideTour from './components/GuideTour.jsx';
+import LoadingScreen from './components/LoadingScreen.jsx';
 import useStore from './store/useStore.js';
 
 const INTRO_SEEN_KEY = 'seabird_intro_seen_v1';
@@ -54,6 +55,7 @@ export default function App() {
       <DeckModal />
       <GuideTour />
       <IntroPage />
+      <LoadingScreen />
     </div>
   );
 }
