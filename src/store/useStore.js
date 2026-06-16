@@ -88,6 +88,10 @@ const useStore = create((set) => ({
   showStatsDashboard: false,
   toggleStatsDashboard: () => set((state) => ({ showStatsDashboard: !state.showStatsDashboard })),
 
+  // 서비스 소개 발표자료(PDF) 모달
+  showDeck: false,
+  toggleDeck: () => set((state) => ({ showDeck: !state.showDeck })),
+
   // X Capital 투자 인텔리전스 공간
   showXCapital: false,
   toggleXCapital: () => set((state) => ({ showXCapital: !state.showXCapital })),

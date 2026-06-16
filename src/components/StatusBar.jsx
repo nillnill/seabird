@@ -27,7 +27,7 @@ function CpChip({ cpId, changePct, severity }) {
 }
 
 export default function StatusBar() {
-  const { wsStatus, shipCount, reports, toggleStatsDashboard, toggleXCapital, openIntro } = useStore();
+  const { wsStatus, shipCount, reports, toggleXCapital, openIntro, toggleDeck } = useStore();
   const { dot, label } = STATUS_CONFIG[wsStatus] ?? STATUS_CONFIG.DISCONNECTED;
 
   // 초크포인트별 최신 보고에서 비교 수치 추출
@@ -62,9 +62,18 @@ export default function StatusBar() {
             <span className="hidden sm:inline">인트로</span>
           </button>
           <button
-            onClick={toggleStatsDashboard}
-            aria-label="통계"
+            onClick={toggleDeck}
+            aria-label="소개"
             className="flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1 rounded border border-sea-border hover:border-blue-500/60 hover:bg-blue-900/20 text-sea-muted hover:text-blue-400 transition-colors"
+          >
+            <span>📄</span>
+            <span className="hidden sm:inline">소개</span>
+          </button>
+          <button
+            disabled
+            aria-label="통계 (준비 중)"
+            title="통계 기능 준비 중"
+            className="flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1 rounded border border-sea-border text-sea-muted/40 opacity-50 cursor-not-allowed"
           >
             <span>📊</span>
             <span className="hidden sm:inline">통계</span>

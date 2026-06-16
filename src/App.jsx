@@ -8,6 +8,7 @@ import StatsDashboard from './components/StatsDashboard.jsx';
 import XCapitalSpace from './components/XCapitalSpace.jsx';
 import IntroPage from './components/IntroPage.jsx';
 import MobileTabBar from './components/MobileTabBar.jsx';
+import DeckModal from './components/DeckModal.jsx';
 import useStore from './store/useStore.js';
 
 const INTRO_SEEN_KEY = 'seabird_intro_seen_v1';
@@ -42,6 +43,7 @@ export default function App() {
       <MobileTabBar />
       <StatsDashboard />
       {showXCapital && <XCapitalSpace />}
+      <DeckModal />
       <IntroPage />
     </div>
   );

@@ -12,3 +12,4 @@ server/.env
 
 # AI 생성 캐릭터 원본 PNG (1024px, ~99MB) — public/characters/*.jpg로 최적화 후 커밋
 image-asset/
+shots/
