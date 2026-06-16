@@ -29,12 +29,13 @@ Respond ONLY with valid JSON. Language: Korean. 인물의 말투를 살려 1인�
       "signal": "LONG|SHORT|HOLD",
       "conviction": "HIGH|MEDIUM|LOW",
       "thesis": "2~3문장. 데이터 근거 → 종목 시사점. 인물 말투.",
+      "drivers": ["이 시그널을 만든 핵심 근거를 '지표(값/변화) → 의미'로 2~4개. 예: '혼잡 +18% → 항만 적체 심화', '체류 28h(+12%) → 선석 포화로 운임 강세 지속', '공식 철광석 처리량 -8% MoM → 제철 수요 둔화'"],
       "watch": ["주시 지표/이벤트 1", "2"],
       "data_points": [{"label":"혼잡지수","current":118,"baseline":100,"unit":"","change_pct":18,"direction":"UP"}]
     }
   ]
 }
-반드시 3개 데스크를 모두 포함. data_points의 current/baseline은 숫자만, direction은 UP|DOWN|STABLE.`;
+반드시 3개 데스크를 모두 포함. drivers는 반드시 입력 데이터의 실제 수치/변화를 근거로 결론과 일관되게(LONG이면 강세 근거, SHORT이면 약세 근거) 작성. data_points의 current/baseline은 숫자만, direction은 UP|DOWN|STABLE.`;
 
 let _supabase = null;
 function getDb() {
@@ -63,6 +64,7 @@ function buildDetail(merged, headline) {
   for (const d of merged) {
     md += `\n### ${d.persona} — ${d.desk}  ${sigEmoji[d.signal] ?? d.signal} (확신 ${d.conviction})\n`;
     md += `${d.thesis}\n\n`;
+    if (d.drivers?.length) md += `**판단 근거**\n${d.drivers.map(x => `- ${x}`).join('\n')}\n\n`;
     md += `| 지표 | 값 | 비고 |\n|------|-----|------|\n`;
     md += `| 혼잡지수 | ${d.congestion.index ?? '–'} (평년100) | ${d.congestion.mode} |\n`;
     md += `| ${d.inflow.label} | ${d.inflow.value?.toLocaleString() ?? '–'} ${d.inflow.unit} | ${d.inflow.mode} |\n`;
@@ -99,7 +101,7 @@ async function runInvestmentAnalyst() {
         desks: desks.map(quantForPrompt),
         market_reports: (recent ?? []).map(r => ({ agent: r.agent_id, title: r.title, summary: r.summary, data_points: r.data_points })),
       }),
-      maxTokens: 3000,
+      maxTokens: 4500, // drivers(데스크별 근거) 추가로 출력이 길어짐 — 잘림 방지 (이슈 #15)
       model: 'claude-haiku-4-5',
     });
 
@@ -112,6 +114,7 @@ async function runInvestmentAnalyst() {
         signal: n.signal ?? 'HOLD',
         conviction: n.conviction ?? 'LOW',
         thesis: n.thesis ?? '데이터 축적 중 — 추세 관망.',
+        drivers: Array.isArray(n.drivers) ? n.drivers : [],
         watch: Array.isArray(n.watch) ? n.watch : [],
         narrative_data_points: Array.isArray(n.data_points) ? n.data_points : [],
       };

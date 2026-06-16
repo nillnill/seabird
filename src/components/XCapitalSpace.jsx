@@ -82,11 +82,25 @@ function PersonaCard({ deskKey, quant, narrative, selected, onSelect, onDetails 
       </div>
 
       <div className="p-3 space-y-2 bg-black/40">
-        {/* thesis */}
-        <p className="text-[11px] text-white/80 leading-snug min-h-[2.5rem]">
-          {narrative?.thesis ?? p.blurb}
-          {narrative?.conviction && <span className="text-white/40 font-mono"> · 확신 {narrative.conviction}</span>}
-        </p>
+        {/* thesis + 판단 근거 — 길어지면 카드 내부에서만 스크롤(전체 카드 높이 고정) */}
+        <div className="max-h-[6rem] overflow-y-auto pr-1 space-y-1.5 [scrollbar-width:thin]">
+          <p className="text-[11px] text-white/80 leading-snug">
+            {narrative?.thesis ?? p.blurb}
+            {narrative?.conviction && <span className="text-white/40 font-mono"> · 확신 {narrative.conviction}</span>}
+          </p>
+          {narrative?.drivers?.length > 0 && (
+            <ul className="space-y-0.5">
+              {narrative.drivers.map((x, i) => (
+                <li key={i} className="text-[10px] text-white/55 flex gap-1 leading-snug">
+                  <span className="text-white/30 shrink-0">·</span><span>{x}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {narrative?.drivers?.length > 0 && (
+          <p className="text-[9px] text-white/30 -mt-1">↕ 근거 스크롤 · 전체 전략은 "자세히"</p>
+        )}
 
         {/* 정량 지표 칩 (2×2) */}
         <div className="grid grid-cols-2 gap-1.5">
@@ -254,11 +268,11 @@ export default function XCapitalSpace() {
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* 사무실 배경 */}
-      <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: "url('/characters/xcap_office.webp')" }} />
-      <div className="absolute inset-0 bg-sea-bg/88 backdrop-blur-sm" />
+      {/* 사무실 배경 — 뷰포트 고정(스크롤해도 항상 콘텐츠 뒤를 덮음) */}
+      <div className="fixed inset-0 z-0 bg-cover bg-center" style={{ backgroundImage: "url('/characters/xcap_office.webp')" }} />
+      <div className="fixed inset-0 z-0 bg-sea-bg/88 backdrop-blur-sm" />
 
-      <div className="relative">
+      <div className="relative z-10">
         {/* 헤더 */}
         <div className="sticky top-0 z-10 bg-sea-panel/90 backdrop-blur border-b border-sea-border px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3 min-w-0">
@@ -387,7 +401,7 @@ export default function XCapitalSpace() {
       </div>
 
       {detailsKey && (
-        <DeskDetailsModal deskKey={detailsKey} seed={seriesCache[detailsKey]} onClose={() => setDetailsKey(null)} />
+        <DeskDetailsModal deskKey={detailsKey} seed={seriesCache[detailsKey]} narrative={narratives[detailsKey]} onClose={() => setDetailsKey(null)} />
       )}
     </div>
   );

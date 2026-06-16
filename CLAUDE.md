@@ -124,7 +124,7 @@ seabird/
     └── data/
         ├── regionData.js      ← 37개 지역 데이터 (초크포인트 7 + 항만 30): 캐릭터·통계·역사·newsQuery·image
         ├── shipCharacters.js  ← 선박 타입별 창작 캐릭터 8개 (직함·quote·bgColor·image 경로)
-        ├── investmentCharacters.js ← X CAPITAL 페르소나 3인 (Billions 모티프: Bobby Axelrod·Taylor Mason·Mike Wagner). key가 서버 xcapData DESKS[].key와 일치(axelrod/taylor/wagner). desk·equities·accent·image(/characters/xcap_*.webp)
+        ├── investmentCharacters.js ← X CAPITAL 페르소나 3인 (Billions 모티프: Bobby Axelrod·Taylor Mason·Mike Wagner). key가 서버 xcapData DESKS[].key와 일치(axelrod/taylor/wagner). desk·equities·accent·image(/characters/xcap_*.webp)·strategy(framework 전략 한 줄·reads 데이터 해석법·playbook LONG/SHORT/HOLD 조건 — 자세히 모달의 '전략' 섹션)
         ├── xcapGlossary.js    ← X CAPITAL 자세히/차트용 한글 라벨: PORT_KO(항구 id→한글, regionData는 역사인물명이라 별도)·FREIGHT_GLOSSARY(KCCI/KDCI/CAPE 설명)·SERIES_META/SERIES_ORDER(지표 라벨·색상·축·단위키)
         ├── introContent.js    ← 인트로 페이지 콘텐츠 (MALCOLM 지도자·ERAS 6시대·ABILITIES·TIPS·CHAPTERS). IntroPage.jsx가 소비
         ├── tradePairs.js      ← (브라우저용 ESM 버전, 현재 미사용)
@@ -214,7 +214,7 @@ Node.js 서버 (포트 3001)
 | WEATHER AGENT | `server/agents/weatherAgent.js` | claude-haiku-4-5 | 3시간 폴링 | Open-Meteo로 13개 해역 날씨 수집 → 이모지·심각도 마커 + 악천후 보고. 항상 보고 |
 | COMMODITY ANALYST | `server/agents/commodityAnalyst.js` | claude-haiku-4-5 | 3시간 폴링 | Perplexity로 원자재·운임 가격 검색 → 구조화 data_points + 한국어 시황 |
 | FLOW REPORTER | `server/agents/flowReporter.js` | claude-haiku-4-5 | 3시간 폴링 | `traffic_snapshots` 이력에서 항만 원자재 유입 '강도'(입항 추정 톤수) 24h vs 직전 24h 추세 산출 → Claude 서술. 이력 없으면 자동 skip |
-| INVESTMENT ANALYST | `server/agents/investmentAnalyst.js` | claude-haiku-4-5 | 3시간 폴링 | **X CAPITAL** — `xcapData.buildAllDesks`(항만 혼잡·원자재 유입·운임)로 3 데스크 정량 신호 집계 + 최근 시황 보고 종합 → 페르소나별 투자 시그널(LONG/SHORT/HOLD)·thesis·종목. severity INFO 고정. 보고 1행에 `raw_data.desks=[3]`(정량+서술 병합) → X Capital 공간이 카드로 렌더 |
+| INVESTMENT ANALYST | `server/agents/investmentAnalyst.js` | claude-haiku-4-5 | 3시간 폴링 | **X CAPITAL** — `xcapData.buildAllDesks`(항만 혼잡·원자재 유입·운임·체류·해수부 공식 통계)로 3 데스크 정량 신호 집계 + 최근 시황 보고 종합 → 페르소나별 투자 시그널(LONG/SHORT/HOLD)·thesis·**drivers(데이터→판단 근거 2~4개)**·종목. severity INFO 고정. 보고 1행에 `raw_data.desks=[3]`(정량+서술 병합) → X Capital 공간이 카드로 렌더. maxTokens 4500(drivers로 출력↑, 잘림 방지 이슈 #15) |
 | CARGO ESTIMATOR | `src/agents/cargoEstimator.js` | claude-haiku-4-5 (기본, `CARGO_MODEL` 환경변수로 오버라이드) | 선박 클릭 | 선박 종류별 전용 프롬프트, vessel_type 변경 시 자동 재실행. 응답 ~24s(Sonnet)→~13s(Haiku) |
 
 > **KOBC_SCRAPER**(에이전트 아님, `server/agents/kobcScraper.js`, 12시간 폴링): KOBC gridList.do를 `sDay/eDay`로 호출(1년≈246행 백필)해 HTML `<tbody>` 파싱 → `freight_history` upsert(건화물 KDCI·CAPE·PANAMAX·SUPRAMAX·HANDY, 신조선가). JSON·HTML 둘 다 파싱, 실패해도 서버 무중단(데모 모드 폴백).

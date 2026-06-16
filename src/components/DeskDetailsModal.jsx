@@ -8,8 +8,11 @@ const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
 const fmtNum = (n) => (n == null ? '–' : Number(n).toLocaleString());
 
 // X CAPITAL 데스크 "자세히" — 항구·운임지수 설명 + 실수치 시계열 표.
-export default function DeskDetailsModal({ deskKey, seed, onClose }) {
+const SIGNAL_COLOR = { LONG: 'text-green-400', SHORT: 'text-red-400', HOLD: 'text-slate-300' };
+
+export default function DeskDetailsModal({ deskKey, seed, narrative, onClose }) {
   const p = INVESTMENT_PERSONAS[deskKey];
+  const strat = p?.strategy;
   const [data, setData] = useState(seed ?? null);
   const [loading, setLoading] = useState(!seed);
 
@@ -56,6 +59,51 @@ export default function DeskDetailsModal({ deskKey, seed, onClose }) {
         </div>
 
         <div className="overflow-y-auto px-5 py-4 space-y-4">
+          {/* 전략 & 판단 근거 */}
+          {(strat || narrative) && (
+            <div className="rounded-lg border border-amber-500/25 bg-amber-950/10 p-3 space-y-2.5">
+              <p className="text-[11px] font-semibold text-amber-200/90">📈 {p.name}의 전략</p>
+              {strat?.framework && <p className="text-[11px] text-white/75 leading-relaxed">{strat.framework}</p>}
+
+              {strat?.reads?.length > 0 && (
+                <div className="space-y-1">
+                  <p className="text-[9px] text-white/40 uppercase tracking-widest">데이터를 읽는 법</p>
+                  {strat.reads.map((r, i) => (
+                    <div key={i} className="flex gap-2 text-[10px] leading-snug">
+                      <span className="text-white/80 font-medium shrink-0 w-28">{r.metric}</span>
+                      <span className="text-white/30">→</span>
+                      <span className="text-white/55">{r.how}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {strat?.playbook && (
+                <p className="text-[10px] text-white/55 font-mono border-t border-white/10 pt-2">🎯 {strat.playbook}</p>
+              )}
+
+              {/* 현재 판단(동적) */}
+              {narrative && (
+                <div className="border-t border-white/10 pt-2 space-y-1.5">
+                  <p className="text-[10px] text-white/45 uppercase tracking-widest">현재 판단</p>
+                  <p className="text-[12px]">
+                    <span className={`font-bold ${SIGNAL_COLOR[narrative.signal] ?? 'text-white/70'}`}>{narrative.signal ?? 'HOLD'}</span>
+                    {narrative.conviction && <span className="text-white/40 font-mono text-[10px]"> · 확신 {narrative.conviction}</span>}
+                  </p>
+                  {narrative.thesis && <p className="text-[11px] text-white/70 leading-relaxed">{narrative.thesis}</p>}
+                  {narrative.drivers?.length > 0 && (
+                    <ul className="space-y-0.5">
+                      {narrative.drivers.map((x, i) => (
+                        <li key={i} className="text-[10px] text-white/60 flex gap-1.5 leading-snug">
+                          <span className="text-amber-400/50 shrink-0">▸</span><span>{x}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 설명 블록 */}
           <div className="space-y-3">
             <div>
