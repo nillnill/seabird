@@ -168,8 +168,8 @@ export default function MapView() {
       map = new mapboxgl.Map({
         container: mapContainerRef.current,
         style: MAP_STYLES[0].url,
-        center: [127.0, 35.0],
-        zoom: 4,
+        center: [131.0, 36.5], // 한국(좌)·일본(우)이 함께 보이는 초기 뷰 (store 초기값과 일치)
+        zoom: 4.6,
         antialias: true,
       });
     } catch (e) {

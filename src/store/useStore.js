@@ -3,8 +3,8 @@ import { create } from 'zustand';
 const useStore = create((set) => ({
   // 지도 상태
   selectedShip: null,
-  mapCenter: [127.0, 35.0],
-  mapZoom: 4,
+  mapCenter: [131.0, 36.5], // 한국(좌)·일본(우)이 함께 보이는 초기 뷰
+  mapZoom: 4.6,
   // 선박 보강 오버라이드 { mmsi: { vessel_type, flag_country } } — 패널이 dbShip으로 알아낸 값을
   // 지도 마커에 즉시 반영(useAISStream.flushBuffer가 적용). 클릭 즉시 색상 일치.
   shipOverrides: {},
