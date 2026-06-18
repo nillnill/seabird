@@ -93,6 +93,11 @@ const useStore = create((set) => ({
   toggleDeck: () => set((state) => ({ showDeck: !state.showDeck })),
   openDeck: () => set({ showDeck: true }), // /소개 경로 등에서 idempotent 오픈
 
+  // 발표 슬라이드(이미지 1~5) 풀스크린 뷰어
+  showSlides: false,
+  toggleSlides: () => set((state) => ({ showSlides: !state.showSlides })),
+  openSlides: () => set({ showSlides: true }), // /발표 경로 등에서 idempotent 오픈
+
   // X Capital 투자 인텔리전스 공간
   showXCapital: false,
   toggleXCapital: () => set((state) => ({ showXCapital: !state.showXCapital })),
