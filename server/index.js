@@ -414,6 +414,50 @@ app.get('/api/ship-track', async (req, res) => {
   res.json({ positions: data ?? [] });
 });
 
+// 화물 추정 결과(cargo_result)를 보고 카드 상세보기용 마크다운으로 변환.
+// 선종별로 필드가 달라(탱커=적재량/등급, LNG=m³/출처, 어선=어획량, 여객=승객수 등) 있는 것만 렌더.
+function buildCargoDetail(result, shipName) {
+  if (!result || typeof result !== 'object') return '';
+  const num = (n) => (typeof n === 'number' ? n.toLocaleString('ko-KR') : null);
+  const lines = [];
+  lines.push(`## ${shipName || '선박'} 화물 추정`);
+  if (result.confidence) lines.push(`**신뢰도**: ${result.confidence}`);
+
+  const dist = Array.isArray(result.cargo_distribution) ? result.cargo_distribution : [];
+  if (dist.length) {
+    lines.push('', '### 화물 구성', '', '| 품목 | 확률 | 오차 |', '|---|---|---|');
+    for (const c of dist) {
+      const p = typeof c.probability_pct === 'number' ? `${c.probability_pct}%` : '-';
+      const m = typeof c.margin_pct === 'number' ? `±${c.margin_pct}%` : '-';
+      lines.push(`| ${c.item ?? '품목'} | ${p} | ${m} |`);
+    }
+  }
+
+  const metrics = [];
+  if (num(result.estimated_load_tons) != null) metrics.push(`- **추정 적재량**: ${num(result.estimated_load_tons)} 톤`);
+  if (num(result.estimated_teu) != null) metrics.push(`- **추정 TEU**: ${num(result.estimated_teu)} TEU`);
+  if (num(result.estimated_load_m3) != null) metrics.push(`- **추정 부피**: ${num(result.estimated_load_m3)} m³`);
+  if (num(result.estimated_catch_tons) != null) metrics.push(`- **추정 어획량**: ${num(result.estimated_catch_tons)} 톤`);
+  if (num(result.estimated_passengers) != null) metrics.push(`- **추정 승객**: ${num(result.estimated_passengers)} 명`);
+  if (typeof result.load_ratio_pct === 'number') metrics.push(`- **적재율**: ${result.load_ratio_pct}%`);
+  if (result.vessel_size_class) metrics.push(`- **선박 등급**: ${result.vessel_size_class}`);
+  if (result.cargo_type) metrics.push(`- **화물 유형**: ${result.cargo_type}`);
+  if (result.cargo_origin) metrics.push(`- **추정 원산지**: ${result.cargo_origin}`);
+  if (result.fishing_zone) metrics.push(`- **추정 어업 해역**: ${result.fishing_zone}`);
+  if (result.vessel_function) metrics.push(`- **선박 기능**: ${result.vessel_function}`);
+  if (result.vessel_type_note) metrics.push(`- **비고**: ${result.vessel_type_note}`);
+  if (metrics.length) lines.push('', '### 추정 수치', '', ...metrics);
+
+  const notes = dist.map((c) => c.annotation).filter(Boolean);
+  if (notes.length) lines.push('', '### 근거', '', ...notes.map((n) => `- ${n}`));
+
+  if (Array.isArray(result.data_sources) && result.data_sources.length) {
+    lines.push('', `**데이터 출처**: ${result.data_sources.join(', ')}`);
+  }
+  if (result.disclaimer) lines.push('', `> ${result.disclaimer}`);
+  return lines.join('\n');
+}
+
 app.post('/api/cargo-estimate', async (req, res) => {
   const { mmsi, ship: fallbackShip } = req.body ?? {};
   if (!mmsi) return res.status(400).json({ error: 'mmsi required' });
@@ -533,7 +577,7 @@ Minimum viable: Even with only MMSI, infer flag country → typical exports → 
       severity: 'INFO',
       title: `${ship.ship_name || mmsi} 화물 추정`,
       summary: (result.disclaimer || '화물 추정 완료').slice(0, 120),
-      detail: '',
+      detail: buildCargoDetail(result, ship.ship_name || mmsi),
       data_points: [],
       annotations: [],
       related_mmsi: [String(mmsi)],
