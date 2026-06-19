@@ -1,6 +1,9 @@
 import { useEffect, useState, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import useStore from '../store/useStore.js';
 import { REGION_DATA } from '../data/regionData.js';
+import { REGION_TRAITS } from '../data/regionTraits.js';
 import Sparkline from './Sparkline.jsx';
 
 const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
@@ -255,19 +258,37 @@ function DistBars({ rows, color = 'bg-blue-500/60' }) {
   );
 }
 
-function renderHistory(text) {
-  return text.split('\n').map((line, i) => {
-    if (!line.trim()) return <div key={i} className="h-2" />;
-    // bold markers **...**
-    const parts = line.split(/\*\*(.*?)\*\*/g);
-    return (
-      <p key={i} className="text-[11px] leading-relaxed text-white/80">
-        {parts.map((p, j) =>
-          j % 2 === 1 ? <strong key={j} className="text-white font-semibold">{p}</strong> : p
-        )}
-      </p>
-    );
-  });
+// Notion 스타일 마크다운 렌더러 (역사·특성 공용). 헤딩·불릿·강조·콜아웃(>)·구분선 지원.
+const MD_COMPONENTS = {
+  p: ({ children }) => <p className="text-[12px] leading-[1.7] text-white/75 my-2">{children}</p>,
+  strong: ({ children }) => <strong className="text-white font-semibold">{children}</strong>,
+  em: ({ children }) => <em className="text-white/90 not-italic font-medium">{children}</em>,
+  h2: ({ children }) => <h2 className="text-[13px] font-bold text-white mt-4 mb-2 tracking-wide">{children}</h2>,
+  h3: ({ children }) => <h3 className="text-[12px] font-semibold text-white/90 mt-3 mb-1.5">{children}</h3>,
+  ul: ({ children }) => <ul className="my-2 space-y-1.5">{children}</ul>,
+  ol: ({ children }) => <ol className="my-2 space-y-1.5 list-decimal pl-4">{children}</ol>,
+  li: ({ children }) => (
+    <li className="flex gap-2 text-[12px] leading-[1.6] text-white/75">
+      <span className="mt-[7px] w-1 h-1 rounded-full bg-blue-400/70 shrink-0" />
+      <span className="flex-1">{children}</span>
+    </li>
+  ),
+  // 콜아웃(>): Notion 콜아웃 박스 — 좌측 강조선 + 옅은 배경
+  blockquote: ({ children }) => (
+    <blockquote className="my-3 rounded-lg border-l-2 border-amber-400/70 bg-amber-400/[0.07] px-3 py-2 text-[12px] leading-[1.6] text-white/85 [&_p]:my-0 [&_p]:text-white/85">
+      {children}
+    </blockquote>
+  ),
+  hr: () => <hr className="my-4 border-white/10" />,
+  a: ({ children, href }) => <a href={href} target="_blank" rel="noreferrer" className="text-blue-400 underline">{children}</a>,
+};
+
+function Markdown({ children }) {
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>
+      {children}
+    </ReactMarkdown>
+  );
 }
 
 export default function RegionIntelPanel() {
@@ -646,8 +667,16 @@ export default function RegionIntelPanel() {
 
           {/* ── 역사 탭 ── */}
           {activeTab === 'history' && (
-            <div className="p-4 space-y-1">
-              {renderHistory(history)}
+            <div className="p-4">
+              <div className="text-[10px] font-bold tracking-widest text-white/40 mb-1">📜 역사</div>
+              <Markdown>{history}</Markdown>
+              {REGION_TRAITS[selectedRegion.id] && (
+                <>
+                  <hr className="my-4 border-white/10" />
+                  <div className="text-[10px] font-bold tracking-widest text-white/40 mb-1">🧭 지역 특성</div>
+                  <Markdown>{REGION_TRAITS[selectedRegion.id]}</Markdown>
+                </>
+              )}
             </div>
           )}
 
