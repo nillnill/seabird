@@ -390,8 +390,8 @@ PORT=3001
 ALLOWED_ORIGINS=https://seabird-tau.vercel.app  ← CORS 허용 오리진(콤마 구분). 미설정 시 전체 허용(로컬)
 RATE_LIMIT_API=120             ← 전역 /api IP당 분당 요청(기본 120)
 RATE_LIMIT_PAID=10             ← Claude/Perplexity 유료 엔드포인트 IP당 합산 분당 요청(기본 10)
-MAX_RELAY_CLIENTS=300          ← relay WS 전체 동시 연결 상한
-MAX_RELAY_PER_IP=6             ← relay WS IP당 동시 연결 상한
+MAX_RELAY_CLIENTS=300          ← relay WS 전체 동시 연결 상한(egress 방어 핵심)
+MAX_RELAY_PER_IP=30            ← relay WS IP당 동시 연결 상한 — **X-Forwarded-For로 실 클라이언트 IP가 구분될 때만 적용**(프록시 뒤 XFF 없으면 미적용 → 정상 사용자 합산 차단 방지). ⚠️ 과거 '6 + 무조건 적용'은 Render 프록시 IP 합산·멀티탭·재연결로 선박이 안 보이던 회귀의 원인이었음
 ```
 > `DATA_GO_KR_KEY`·`GICOMS_API_KEY`는 Render에도 동일 설정 필요(render.yaml `sync:false`로 선언). GICOMS는 발급 시 등록한 도메인(seabird.onrender.com)을 쿼리 `domain` 파라미터로 넘기므로 로컬에서도 동작.
 > **보안(공개 런칭 전 필독): `SECURITY.md`** — CORS allowlist·rate limit·WS 연결 상한은 코드에 반영됨(위 env로 제어). Supabase RLS 검증·Mapbox 도메인 제한·API 결제 경보·데이터 약관은 대시보드 작업이라 `SECURITY.md` 체크리스트 참조. `ALLOWED_ORIGINS`는 프로덕션에서 반드시 채울 것(비우면 전체 허용).

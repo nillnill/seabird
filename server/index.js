@@ -91,27 +91,38 @@ const httpServer = http.createServer(app);
 // perMessageDeflate: AIS 스냅샷 JSON은 키·값 반복이 많아 deflate로 ~70-80% 줄어듦 (Render egress 절감)
 const wss = new WebSocketServer({ server: httpServer, path: '/relay', perMessageDeflate: true });
 
-// relay 연결 어뷰징 방어: 전체 동시 연결 + IP당 연결 수 상한(egress 비용 폭증·소켓 고갈 방지)
+// relay 연결 어뷰징 방어: 전체 동시 연결(egress 비용 방어 핵심) + IP당 연결 수 상한(보조).
+// ⚠️ IP당 상한은 '실제 클라이언트 IP를 구분할 수 있을 때만' 적용한다.
+//    프록시(Render) 뒤에서 X-Forwarded-For가 없으면 모든 사용자가 프록시 IP 1개로 합쳐져
+//    전역 N개 제한처럼 작동해 정상 사용자까지 차단된다(이전 버그). XFF가 있을 때만 per-IP 적용.
+//    또 NAT/사무실·로컬 개발(::1)·멀티탭·재연결 누수까지 흡수하도록 기본값을 넉넉히(30) 둔다.
 const MAX_RELAY_CLIENTS = Number(process.env.MAX_RELAY_CLIENTS || 300);
-const MAX_RELAY_PER_IP = Number(process.env.MAX_RELAY_PER_IP || 6);
+const MAX_RELAY_PER_IP = Number(process.env.MAX_RELAY_PER_IP || 30);
 const relayIpCounts = new Map(); // ip → 현재 연결 수
 
 wss.on('connection', (ws, req) => {
-  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
-    .split(',')[0].trim();
+  // 프록시가 넘긴 실제 클라이언트 IP만 per-IP 키로 쓴다(없으면 null → per-IP 미적용).
+  const xff = req.headers['x-forwarded-for'];
+  const ip = xff ? String(xff).split(',')[0].trim() : null;
 
   // 전체 상한 초과 — 서버 과부하 신호(1013)로 거부
   if (wss.clients.size > MAX_RELAY_CLIENTS) {
     ws.close(1013, 'server busy');
     return;
   }
-  // IP당 상한 초과 — 한 클라이언트가 다중 소켓으로 egress를 빨아들이는 것 차단
-  const ipCount = (relayIpCounts.get(ip) || 0) + 1;
-  if (ipCount > MAX_RELAY_PER_IP) {
-    ws.close(1013, 'too many connections');
-    return;
+  // IP당 상한 — 실제 클라이언트 IP를 알 때만(프록시 합산 차단 방지). 한 클라이언트의 다중 소켓 남용만 차단.
+  if (ip && MAX_RELAY_PER_IP > 0) {
+    const ipCount = (relayIpCounts.get(ip) || 0) + 1;
+    if (ipCount > MAX_RELAY_PER_IP) {
+      ws.close(1013, 'too many connections');
+      return;
+    }
+    relayIpCounts.set(ip, ipCount);
+    ws.on('close', () => {
+      const n = (relayIpCounts.get(ip) || 1) - 1;
+      if (n <= 0) relayIpCounts.delete(ip); else relayIpCounts.set(ip, n);
+    });
   }
-  relayIpCounts.set(ip, ipCount);
 
   console.log('[RELAY] browser connected, total:', wss.clients.size);
   // 초기 전체 스냅샷 1회 — 새 탭이 즉시 전체 선박을 받음(위치가 움직일 때까지 기다리지 않음)
@@ -120,11 +131,7 @@ wss.on('connection', (ws, req) => {
   if (ships.length && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'snapshot', ships, full: true }));
   }
-  ws.on('close', () => {
-    const n = (relayIpCounts.get(ip) || 1) - 1;
-    if (n <= 0) relayIpCounts.delete(ip); else relayIpCounts.set(ip, n);
-    console.log('[RELAY] browser disconnected, total:', wss.clients.size);
-  });
+  ws.on('close', () => console.log('[RELAY] browser disconnected, total:', wss.clients.size));
 });
 
 function broadcast(data) {
