@@ -3,6 +3,7 @@ const express = require('express');
 const http = require('http');
 const { WebSocketServer, WebSocket } = require('ws');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
 const { startPortAnalyst, runPortAnalyst, PORTS, HARDCODED_BASELINE: PORT_BASELINE } = require('./agents/portAnalyst');
@@ -41,15 +42,77 @@ const supabase = createClient(
 );
 
 const app = express();
-app.use(cors());
-app.use(express.json());
+
+// Render 등 프록시 1홉 뒤에서 실 클라이언트 IP(X-Forwarded-For)를 신뢰 — rate limit·WS IP 카운트의 정확도용.
+// (1 = 첫 프록시만 신뢰. 프록시 없이 직접 노출이면 0으로 두어도 무방.)
+app.set('trust proxy', 1);
+
+// ── CORS allowlist ───────────────────────────────────────────────────────────
+// ALLOWED_ORIGINS(콤마 구분, 예: "https://seabird-tau.vercel.app,https://seabird.app")가 설정되면
+// 해당 오리진의 브라우저 요청만 허용. 미설정 시(로컬 개발) 전체 허용.
+// ※ CORS는 '브라우저' 교차 출처만 막는다. curl/스크립트 직접 호출은 못 막으므로 rate limit이 실제 비용 방어선.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',').map((s) => s.trim()).filter(Boolean);
+const corsOptions = ALLOWED_ORIGINS.length
+  ? {
+      origin(origin, cb) {
+        // origin 없음 = 서버-서버/동일출처/헬스체크 → 허용. 그 외엔 allowlist만.
+        if (!origin || ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+        return cb(null, false); // 헤더 미부여 → 브라우저가 차단(에러 throw 대신 조용히 거부)
+      },
+    }
+  : {};
+app.use(cors(corsOptions));
+
+app.use(express.json({ limit: '64kb' })); // 과대 페이로드 차단(기본 100kb → 64kb)
+
+// ── Rate limiting ────────────────────────────────────────────────────────────
+// 전역: 모든 /api에 IP당 분당 120요청. 통계 GET은 60초 캐시라 정상 사용자는 거의 안 걸림.
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.RATE_LIMIT_API || 120),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please slow down.' },
+});
+// 강화: Claude/Perplexity 유료 호출 엔드포인트는 IP당 분당 10요청(비용 폭탄 방어 핵심).
+const paidLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.RATE_LIMIT_PAID || 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Rate limit exceeded for AI-backed endpoints.' },
+});
+app.use('/api/', apiLimiter);
 
 const httpServer = http.createServer(app);
 
 // WebSocket 서버 (브라우저 relay용)
 // perMessageDeflate: AIS 스냅샷 JSON은 키·값 반복이 많아 deflate로 ~70-80% 줄어듦 (Render egress 절감)
 const wss = new WebSocketServer({ server: httpServer, path: '/relay', perMessageDeflate: true });
-wss.on('connection', (ws) => {
+
+// relay 연결 어뷰징 방어: 전체 동시 연결 + IP당 연결 수 상한(egress 비용 폭증·소켓 고갈 방지)
+const MAX_RELAY_CLIENTS = Number(process.env.MAX_RELAY_CLIENTS || 300);
+const MAX_RELAY_PER_IP = Number(process.env.MAX_RELAY_PER_IP || 6);
+const relayIpCounts = new Map(); // ip → 현재 연결 수
+
+wss.on('connection', (ws, req) => {
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '')
+    .split(',')[0].trim();
+
+  // 전체 상한 초과 — 서버 과부하 신호(1013)로 거부
+  if (wss.clients.size > MAX_RELAY_CLIENTS) {
+    ws.close(1013, 'server busy');
+    return;
+  }
+  // IP당 상한 초과 — 한 클라이언트가 다중 소켓으로 egress를 빨아들이는 것 차단
+  const ipCount = (relayIpCounts.get(ip) || 0) + 1;
+  if (ipCount > MAX_RELAY_PER_IP) {
+    ws.close(1013, 'too many connections');
+    return;
+  }
+  relayIpCounts.set(ip, ipCount);
+
   console.log('[RELAY] browser connected, total:', wss.clients.size);
   // 초기 전체 스냅샷 1회 — 새 탭이 즉시 전체 선박을 받음(위치가 움직일 때까지 기다리지 않음)
   const ships = [];
@@ -57,7 +120,11 @@ wss.on('connection', (ws) => {
   if (ships.length && ws.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify({ type: 'snapshot', ships, full: true }));
   }
-  ws.on('close', () => console.log('[RELAY] browser disconnected, total:', wss.clients.size));
+  ws.on('close', () => {
+    const n = (relayIpCounts.get(ip) || 1) - 1;
+    if (n <= 0) relayIpCounts.delete(ip); else relayIpCounts.set(ip, n);
+    console.log('[RELAY] browser disconnected, total:', wss.clients.size);
+  });
 });
 
 function broadcast(data) {
@@ -458,7 +525,7 @@ function buildCargoDetail(result, shipName) {
   return lines.join('\n');
 }
 
-app.post('/api/cargo-estimate', async (req, res) => {
+app.post('/api/cargo-estimate', paidLimiter, async (req, res) => {
   const { mmsi, ship: fallbackShip } = req.body ?? {};
   if (!mmsi) return res.status(400).json({ error: 'mmsi required' });
 
@@ -613,9 +680,12 @@ ROUTING RULES:
 
 Port ID mappings: 부산=busan, 인천=incheon, 광양=gwangyang, 싱가포르=singapore, 상하이=shanghai, 로테르담=rotterdam, LA=la_lb, 두바이=dubai, 요코하마=yokohama, 고베=kobe, 닝보=ningbo, 선전=shenzhen, 홍콩=hongkong, 블라디보스토크=vladivostok, 포트클랑=portklang, 뭄바이=mumbai, 함부르크=hamburg, 뉴욕=newyork`;
 
-app.post('/api/orchestrate', async (req, res) => {
+app.post('/api/orchestrate', paidLimiter, async (req, res) => {
   const { text, selectedShip } = req.body ?? {};
   if (!text) return res.status(400).json({ error: 'text required' });
+  if (typeof text !== 'string' || text.length > 500) {
+    return res.status(400).json({ error: 'text must be a string of at most 500 characters' });
+  }
   try {
     const routing = await callClaude({
       systemPrompt: ORCHESTRATE_SYSTEM_PROMPT,
@@ -994,7 +1064,7 @@ app.get('/api/comparison-board', async (req, res) => {
   }
 });
 
-app.get('/api/region-news', async (req, res) => {
+app.get('/api/region-news', paidLimiter, async (req, res) => {
   const { id, type } = req.query;
   if (!id) return res.status(400).json({ error: 'id required' });
 
@@ -1107,7 +1177,7 @@ app.get('/api/region-news', async (req, res) => {
   }
 });
 
-app.get('/api/news', async (req, res) => {
+app.get('/api/news', paidLimiter, async (req, res) => {
   const { from, q } = req.query;
   try {
     const params = new URLSearchParams({

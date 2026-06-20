@@ -50,7 +50,7 @@ seabird/
 │   └── generate_region_characters.cjs ← regionData.js(ESM)에서 캐릭터 페르소나만 추출 → server/data/regionCharacters.js(CJS) 미러 생성 (history 제외)
 │
 ├── server/
-│   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/baseline-history + /api/change-windows + /api/inflow-windows + /api/comparison-board + /api/xcap/desks + /api/xcap/freight + /api/xcap/desk-series + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작 (통계 GET 60초 캐시·comparison-board 단일쿼리·dwell_events 180일 TTL 정리)
+│   ├── index.js               ← AIS 프록시 + relay + /api/cargo-estimate + /api/ship-track + /api/port-stats + /api/chokepoint-stats + /api/baseline-history + /api/change-windows + /api/inflow-windows + /api/comparison-board + /api/xcap/desks + /api/xcap/freight + /api/xcap/desk-series + /api/region-news + /api/news + /api/orchestrate + 에이전트 시작 (통계 GET 60초 캐시·comparison-board 단일쿼리·dwell_events 180일 TTL 정리). **보안 미들웨어**: CORS allowlist(ALLOWED_ORIGINS)·express-rate-limit 2단계(전역 apiLimiter + 유료 paidLimiter)·express.json 64kb·trust proxy·relay WS 연결 상한 → SECURITY.md
 │   ├── package.json
 │   ├── .env                   ← 서버 환경변수 (git 제외)
 │   ├── agents/
@@ -116,7 +116,6 @@ seabird/
     │   └── useStore.js        ← Zustand 전역 상태
     │
     ├── utils/
-    │   ├── claudeClient.js    ← (현재 미사용 — 에이전트가 서버로 이동됨)
     │   ├── supabaseClient.js  ← Supabase 클라이언트 싱글턴
     │   ├── aisParser.js       ← AIS 메시지 → GeoJSON Feature, mmsiToFlag(MID_TO_FLAG 표준 테이블, server와 동기화), mapAISTypeToCategory. flag는 위치보고에도 채움 → 통계/마커 국적 커버리지 ~100%
     │   ├── destinationNormalizer.js ← AIS destination 자유텍스트 정규화 normalizeDestination()→{country,port,category}. server/data/ 미러(ESM에서 자동 생성)
@@ -386,8 +385,16 @@ PERPLEXITY_API_KEY=pplx-...    ← 지역 뉴스 영문 검색용
 DATA_GO_KR_KEY=...             ← 해양수산부 공공데이터(data.go.kr) 항만 입출항·화물 통계
 GICOMS_API_KEY=...             ← GICOMS 연안 AIS 해역 밀집도 (등록 도메인 seabird.onrender.com)
 PORT=3001
+
+# ── 보안/어뷰징 방어 (프로덕션 권장 — server/index.js가 소비) ──
+ALLOWED_ORIGINS=https://seabird-tau.vercel.app  ← CORS 허용 오리진(콤마 구분). 미설정 시 전체 허용(로컬)
+RATE_LIMIT_API=120             ← 전역 /api IP당 분당 요청(기본 120)
+RATE_LIMIT_PAID=10             ← Claude/Perplexity 유료 엔드포인트 IP당 합산 분당 요청(기본 10)
+MAX_RELAY_CLIENTS=300          ← relay WS 전체 동시 연결 상한
+MAX_RELAY_PER_IP=6             ← relay WS IP당 동시 연결 상한
 ```
 > `DATA_GO_KR_KEY`·`GICOMS_API_KEY`는 Render에도 동일 설정 필요(render.yaml `sync:false`로 선언). GICOMS는 발급 시 등록한 도메인(seabird.onrender.com)을 쿼리 `domain` 파라미터로 넘기므로 로컬에서도 동작.
+> **보안(공개 런칭 전 필독): `SECURITY.md`** — CORS allowlist·rate limit·WS 연결 상한은 코드에 반영됨(위 env로 제어). Supabase RLS 검증·Mapbox 도메인 제한·API 결제 경보·데이터 약관은 대시보드 작업이라 `SECURITY.md` 체크리스트 참조. `ALLOWED_ORIGINS`는 프로덕션에서 반드시 채울 것(비우면 전체 허용).
 
 ---
 
