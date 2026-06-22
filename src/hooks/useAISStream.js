@@ -9,6 +9,13 @@ const PROXY_WS_URL = import.meta.env.VITE_PROXY_URL
   ? import.meta.env.VITE_PROXY_URL.replace(/^http/, 'ws') + '/relay'
   : 'ws://localhost:3001/relay';
 const SELECT_COLS = 'mmsi, ship_name, vessel_type, lat, lng, speed, heading, destination, flag_country, nav_status, eta';
+// Supabase prefetch — PostgREST max-rows(1000)를 range 페이지네이션으로 우회해 더 많은 선박을 지도에 즉시 채운다.
+// ※ 이건 콜드스타트용 'DB 시드'일 뿐이다. 서버가 떠 있으면 relay full 스냅샷이 추적 중인 전 선박을 캡 없이 보낸다.
+//   updated_at 최신순이라 캡 안에서 가장 신선한 선박부터 채워진다(오래된 유령선·localStorage 한도·egress 균형).
+const PREFETCH_MAX = 50000;  // 지도에 미리 올릴 최대 선박 수(크게 — DB의 가용 선박 대부분을 시드)
+const PREFETCH_PAGE = 1000;  // PostgREST 단일 응답 상한(이 프로젝트 max-rows)
+const PREFETCH_BATCH = 10;   // 전체 prefetch 시 동시 요청 페이지 수(27s 순차 → 수초로 단축)
+const LS_MAX_FEATURES = 8000; // localStorage 캐시 상한(초과 시 직렬화 skip — ~5MB 쿼터·CPU 낭비 방지, relay가 복원)
 // 방치 탭 대역폭 절감: 백그라운드 탭은 즉시, 포그라운드라도 N분 무활동이면 relay를 끊는다.
 // 다시 보거나 활동하면 자동 재연결(서버가 접속 시 full 스냅샷을 다시 줘 즉시 복구).
 const IDLE_DISCONNECT_MS = 10 * 60 * 1000;   // 10분 무활동 → relay 종료
@@ -54,7 +61,7 @@ export function useAISStream(mapRef) {
     // 2) Supabase 보강 — 캐시 신선 여부와 무관하게 항상 실행.
     // (라이브 relay 선박은 vessel_type='Other'로만 들어오므로, 서버가 누적한 선종/국적을
     //  Supabase에서 끌어와 지도 색상(선종)을 채운다. 과거엔 캐시 신선 시 생략돼 거의 회색이었음.)
-    await enrichFromSupabase();
+    await enrichFromSupabase(true); // 최초 1회 전체 prefetch(시드)
   }, [mapRef, setShipCount]);
 
   // ships 행을 shipMapRef에 병합 (라이브 위치는 유지, 정적 데이터만 보강)
@@ -89,8 +96,9 @@ export function useAISStream(mapRef) {
   }, []);
 
   // Supabase ships 테이블의 정적 데이터(선종·국적·선명·목적지)를 라이브 지도에 병합.
-  // 주기적으로도 호출돼 서버가 선종을 더 받을수록 지도가 점점 색칠된다.
-  const enrichFromSupabase = useCallback(async () => {
+  // fullPrefetch=true(최초 로드): PREFETCH_MAX까지 전체 시드(병렬). false(3분 주기): 화면 선박 보강 +
+  // 최신 1페이지 top-up만 — 매번 5만 재조회로 Supabase IO 예산을 태우지 않도록(이슈 #20).
+  const enrichFromSupabase = useCallback(async (fullPrefetch = false) => {
     // 1) 화면 우선 보강 — 지금 지도에 떠 있으면서 아직 선종 미상('Other')이거나 국적 없는 선박을
     //    MMSI로 직접 조회. 6000 제한과 무관하게 '화면에 보이는 선박'을 100% 커버한다.
     //    (과거엔 updated_at 최신 6000척만 끌어와, 6000 바깥 선박은 클릭해야만 선종이 보였음.)
@@ -110,15 +118,29 @@ export function useAISStream(mapRef) {
       results.forEach((rows) => applyRows(rows));
     }
 
-    // 2) prefetch — 아직 지도에 없는(곧 들어올) 최신 선박. updated_at 최신순 6000척.
-    const { data: ships } = await supabase
-      .from('ships')
-      .select(SELECT_COLS)
-      .not('lat', 'is', null)
+    // 2) prefetch — 지도에 선박을 시드. updated_at 최신순(신선한 선박부터).
+    //    ⚠️ Supabase(PostgREST) max-rows가 1000이라 .limit(N>1000)이 1000으로 잘린다(지도가 ~1000척에서 멈추던 원인).
+    //    range로 1000씩 페이지네이션해 끌어온다. (ships 테이블은 수만 행)
+    const fetchPage = (from) => supabase
+      .from('ships').select(SELECT_COLS).not('lat', 'is', null)
       .order('updated_at', { ascending: false })
-      .limit(6000);
+      .range(from, from + PREFETCH_PAGE - 1)
+      .then(({ data }) => data ?? []);
 
-    if (ships?.length) applyRows(ships);
+    if (fullPrefetch) {
+      // 전체 시드 — PREFETCH_BATCH개씩 병렬로(순차 27s → 수초). 마지막 페이지 도달 시 중단.
+      let stop = false;
+      for (let base = 0; base < PREFETCH_MAX && !stop; base += PREFETCH_PAGE * PREFETCH_BATCH) {
+        const offsets = [];
+        for (let i = 0; i < PREFETCH_BATCH && base + i * PREFETCH_PAGE < PREFETCH_MAX; i++) offsets.push(base + i * PREFETCH_PAGE);
+        const pages = await Promise.all(offsets.map(fetchPage));
+        pages.forEach((p) => applyRows(p));
+        if (pages.length && pages[pages.length - 1].length < PREFETCH_PAGE) stop = true; // 더 없음
+      }
+    } else {
+      // 주기 갱신 — 최신 1페이지 top-up만(전체 재조회로 IO 예산 소모 방지). 화면 선박 보강은 위 (1)에서 이미 처리.
+      applyRows(await fetchPage(0));
+    }
 
     // 지도 갱신 + localStorage 갱신
     const source = mapRef.current?.getSource('ships');
@@ -126,7 +148,8 @@ export function useAISStream(mapRef) {
     if (source) { source.setData({ type: 'FeatureCollection', features }); setShipCount(features.length); }
     try {
       const now = Date.now();
-      localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ ts: now, features }));
+      // 너무 크면 직렬화 skip(쿼터·CPU 낭비 방지) — 캐시 못 써도 relay·prefetch가 복원
+      if (features.length <= LS_MAX_FEATURES) localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ ts: now, features }));
       lastSaveRef.current = now;
     } catch { /* 용량 초과 등 무시 */ }
   }, [mapRef, setShipCount, applyRows]);
@@ -163,9 +186,9 @@ export function useAISStream(mapRef) {
     source.setData({ type: 'FeatureCollection', features });
     setShipCount(features.length);
 
-    // 라이브 위치로 localStorage 캐시를 따뜻하게 유지 (최대 60초마다 1회)
+    // 라이브 위치로 localStorage 캐시를 따뜻하게 유지 (최대 60초마다 1회, 너무 크면 skip)
     const now = Date.now();
-    if (now - lastSaveRef.current > 60_000) {
+    if (now - lastSaveRef.current > 60_000 && features.length <= LS_MAX_FEATURES) {
       lastSaveRef.current = now;
       try {
         localStorage.setItem(LS_CACHE_KEY, JSON.stringify({ ts: now, features }));

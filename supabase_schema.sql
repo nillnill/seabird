@@ -201,6 +201,22 @@ CREATE TABLE IF NOT EXISTS kor_port_monthly (
 );
 CREATE INDEX IF NOT EXISTS idx_kor_port_monthly ON kor_port_monthly (port_id, category, period_ym DESC);
 
+-- ── sea_density_daily: GICOMS 연안 AIS 해역 통항 밀집도 (일별 준실시간) ─────────
+-- GICOMS WFS가 2026-06-22 수정되어 일별·당일까지 제공(이전엔 월별·수개월 지연이라 kor_port_monthly에
+-- 월 1일만 저장했음). aisstream 무료티어가 못 보는 국내 산업항(광양·포항·당진·울산·여수)을
+-- 라이브 AIS와 동일한 일별 케이던스의 1차 신호로 X CAPITAL이 사용. freight_history(obs_date) 패턴 미러.
+CREATE TABLE IF NOT EXISTS sea_density_daily (
+  id         BIGSERIAL PRIMARY KEY,
+  port_id    VARCHAR(30) NOT NULL,        -- 우리 port id (busan·ulsan·gwangyang 등)
+  obs_date   DATE NOT NULL,
+  ais_sum    DECIMAL,                     -- 항구 BBOX 내 3개 2h 윈도우 AIS 접촉 합(통항 강도)
+  cells      INT,                         -- 응답 격자 셀 수(데이터 유무 판단)
+  unit       VARCHAR(16) DEFAULT 'AIS통항',
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  UNIQUE (port_id, obs_date)
+);
+CREATE INDEX IF NOT EXISTS idx_sea_density_daily ON sea_density_daily (port_id, obs_date DESC);
+
 -- ── RLS (최소 설정) ──────────────────────────────────────────────────────────
 ALTER TABLE agent_reports ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_read_reports" ON agent_reports FOR SELECT USING (true);
@@ -214,3 +230,5 @@ ALTER TABLE dwell_events ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_read_dwell" ON dwell_events FOR SELECT USING (true);
 ALTER TABLE kor_port_monthly ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_read_kor_port_monthly" ON kor_port_monthly FOR SELECT USING (true);
+ALTER TABLE sea_density_daily ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_read_sea_density_daily" ON sea_density_daily FOR SELECT USING (true);

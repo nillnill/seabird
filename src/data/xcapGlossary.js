@@ -40,7 +40,10 @@ export const SERIES_META = {
   // 해양수산부 월별 공식 통계 — 월 계단선(step). AIS 사각지대(국내 철강·정유항) 보완.
   korVessel:  { key: 'korVessel',  label: '공식 입항(월)',   color: '#22D3EE', axis: 'l', unitKey: 'korVessel', step: true, official: true },
   korCargo:   { key: 'korCargo',   label: '공식 화물처리(월)', color: '#F472B6', axis: 'l', unitKey: 'korCargo', step: true, official: true },
+  // GICOMS 해역 통항 밀집도 — 2026-06 WFS 수정 후 일별 준실시간. AIS 사각지대 국내항의 1차 통항 신호.
+  // 값이 수천 단위라 우축(r) + index 모드로 비교(raw 모드는 좌축 척·시간을 압도).
+  seaDensity: { key: 'seaDensity', label: '해역밀집(AIS/일)', color: '#2DD4BF', axis: 'r', unitKey: 'seaDensity' },
 };
 
-// 차트 표시 순서 (해역 밀집도는 과거 월별이라 일별 차트가 아닌 자세히 모달의 월별 추세로 표시)
-export const SERIES_ORDER = ['congestion', 'inbound', 'inflow', 'dwell', 'freight', 'korVessel', 'korCargo'];
+// 차트 표시 순서
+export const SERIES_ORDER = ['congestion', 'inbound', 'inflow', 'dwell', 'freight', 'korVessel', 'korCargo', 'seaDensity'];

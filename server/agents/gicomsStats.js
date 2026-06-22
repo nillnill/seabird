@@ -1,14 +1,16 @@
-// GICOMS(해양안전종합정보시스템) 연안 AIS 통항 통계 → kor_port_monthly(category='sea_density').
-// X CAPITAL 한국 항구의 "해역 통항 밀집도" 보조 신호. aisstream 무료티어가 못 잡는 국내 연안을 보완.
+// GICOMS(해양안전종합정보시스템) 연안 AIS 통항 통계 → sea_density_daily(일별).
+// X CAPITAL 한국 항구의 "해역 통항 밀집도" 1차 신호. aisstream 무료티어가 못 잡는 국내 연안을 보완.
 //
 //   소스: GICOMS WFS GetFeature (GeoServer 백엔드). lage_ship_stats_view = 대해구 격자 × 일 × 시간별 AIS 수.
 //   각 항구 주변 BBOX(EPSG:3857)로 격자를 좁혀 하루치 ais 합산 = 해역 밀집도.
-//   ※ 데이터가 ~수개월 지연 발행(현재 최신 ~2026-01) → 과거 기준 밀집도. period_ym에 데이터 월 기록.
+//   ※ 2026-06-22 GICOMS가 WFS 서비스를 수정 → 일별·당일까지(준실시간) 제공. (이전엔 월별·수개월 지연이라
+//     월 1일만 골라 kor_port_monthly에 월별 저장했음 — 이제 일별로 sea_density_daily에 적재해 라이브 AIS와
+//     동일한 일별 케이던스로 사용.)
 //   ※ domain은 키 발급 시 등록한 값(seabird.onrender.com). 쿼리 파라미터라 로컬에서도 동작.
 const fetch = require('node-fetch');
 const { createClient } = require('@supabase/supabase-js');
 
-const POLL_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24h (월 단위 발행이라 드물게)
+const POLL_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h (당일 값이 하루 동안 채워지므로 준실시간 갱신)
 const WFS = 'https://gicoms.go.kr/kodispub/openApi/wfs.do';
 const DOMAIN = process.env.GICOMS_DOMAIN || 'seabird.onrender.com';
 const BBOX_DEG = 0.4; // 항구 중심 ±0.4°(~40km) 해역
@@ -71,19 +73,16 @@ async function fetchPortDensity(port, dt) {
   return { cells, aisSum: Math.round(aisSum), windows: TIME_WINDOWS.length };
 }
 
-const BACKFILL_MONTHS = 14; // 시계열용 — 최근 N개월(발행된 달만 적재)
+const BACKFILL_DAYS = 35; // 차트 30일 + 버퍼. 첫 실행만 전체 백필, 이후엔 누락분만.
+const REFRESH_DAYS = 2;   // 오늘·어제는 이미 있어도 재조회(당일 값이 하루 동안 채워짐 → upsert 덮어씀)
 
-// 해당 월(YYYYMM)에 데이터가 있는 대표일 탐색(부산 단일 2h 윈도우로 확인). 없으면 null(미발행).
-async function findDayInMonth(ym) {
-  for (const day of ['15', '02', '20', '10']) {
-    const dt = ym + day;
-    try {
-      const r = await fetchWindow(KOR_PORTS[0], dt, '08', '09');
-      if (r.cells > 0) return dt;
-    } catch { /* 계속 */ }
-  }
-  return null;
+// YYYYMMDD 문자열(UTC i일 전)
+function dayStr(daysAgo) {
+  const d = new Date(Date.now() - daysAgo * 86400000);
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
 }
+// 'YYYYMMDD' → 'YYYY-MM-DD'(DATE 컬럼용)
+const toIsoDate = (dt) => `${dt.slice(0, 4)}-${dt.slice(4, 6)}-${dt.slice(6, 8)}`;
 
 async function runGicomsStats() {
   console.log('[GICOMS_STATS] run at', new Date().toISOString());
@@ -92,32 +91,38 @@ async function runGicomsStats() {
     return 0;
   }
   const db = getDb();
-  // 이미 적재된 월은 skip(요청 절약). 첫 실행은 백필, 이후엔 신규 월만.
-  const { data: existing } = await db.from('kor_port_monthly').select('period_ym').eq('category', 'sea_density');
-  const haveYm = new Set((existing ?? []).map(r => r.period_ym));
-
-  const now = new Date();
-  let totalRows = 0, monthsFilled = 0;
-  for (let i = 0; i < BACKFILL_MONTHS; i++) {
-    const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - i, 1));
-    const ym = `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
-    if (haveYm.has(ym)) continue; // 이미 있음
-    try {
-      const dt = await findDayInMonth(ym);
-      if (!dt) continue; // 미발행 월
-      const rows = [];
-      for (const port of KOR_PORTS) {
-        try { const { aisSum } = await fetchPortDensity(port, dt); rows.push({ port_id: port.id, category: 'sea_density', item: 'all', period_ym: ym, value: aisSum, unit: 'AIS통항' }); }
-        catch { /* 개별 항구 실패 무시 */ }
-      }
-      if (rows.length) {
-        const { error } = await db.from('kor_port_monthly').upsert(rows, { onConflict: 'port_id,category,item,period_ym' });
-        if (!error) { totalRows += rows.length; monthsFilled++; console.log(`[GICOMS_STATS] ${ym}: ${rows.length} ports (date ${dt})`); }
-      }
-    } catch { /* 월 단위 실패 무시 */ }
+  // 이미 적재된 일자는 skip(요청 절약). 단 최근 REFRESH_DAYS는 갱신 위해 재조회.
+  const cutoffIso = toIsoDate(dayStr(BACKFILL_DAYS));
+  const { data: existing, error: selErr } = await db.from('sea_density_daily')
+    .select('obs_date').gte('obs_date', cutoffIso);
+  if (selErr) {
+    if (!_warned) { _warned = true; console.warn('[GICOMS_STATS] sea_density_daily 조회 실패(테이블 미생성?):', selErr.message); }
+    return 0;
   }
-  if (!monthsFilled && !haveYm.size && !_warned) { _warned = true; console.warn('[GICOMS_STATS] 가용 데이터 없음(발행 지연/키 확인).'); }
-  console.log(`[GICOMS_STATS] done — ${monthsFilled} new months, ${totalRows} rows (기존 ${haveYm.size}개월)`);
+  const haveDate = new Set((existing ?? []).map(r => String(r.obs_date).slice(0, 10)));
+
+  let totalRows = 0, daysFilled = 0, emptyDays = 0;
+  for (let i = 0; i < BACKFILL_DAYS; i++) {
+    const dt = dayStr(i);              // YYYYMMDD
+    const iso = toIsoDate(dt);
+    if (i >= REFRESH_DAYS && haveDate.has(iso)) continue; // 과거일은 이미 있으면 skip
+    const rows = [];
+    for (const port of KOR_PORTS) {
+      try {
+        const { aisSum, cells } = await fetchPortDensity(port, dt);
+        if (cells > 0) rows.push({ port_id: port.id, obs_date: iso, ais_sum: aisSum, cells, unit: 'AIS통항', updated_at: new Date().toISOString() });
+      } catch { /* 개별 항구 실패 무시 */ }
+    }
+    if (rows.length) {
+      const { error } = await db.from('sea_density_daily').upsert(rows, { onConflict: 'port_id,obs_date' });
+      if (!error) { totalRows += rows.length; daysFilled++; }
+      else if (!_warned) { _warned = true; console.warn('[GICOMS_STATS] upsert 실패(테이블 미생성?):', error.message); }
+    } else {
+      emptyDays++;
+    }
+  }
+  if (!daysFilled && !haveDate.size && !_warned) { _warned = true; console.warn('[GICOMS_STATS] 가용 데이터 없음(발행 지연/키 확인).'); }
+  console.log(`[GICOMS_STATS] done — ${daysFilled} days upserted, ${totalRows} rows (기존 ${haveDate.size}일, 공백 ${emptyDays}일)`);
   return totalRows;
 }
 

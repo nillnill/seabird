@@ -1,6 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { callClaude } = require('./claudeClient');
-const { resolveBaseline } = require('./baselineUtils');
+const { resolveBaselineStats } = require('./baselineUtils');
 const { REGION_CHARACTERS } = require('../data/regionCharacters');
 
 // 각 초크포인트의 대표 캐릭터(역사 인물)가 1시간에 한 번 자기 해협의 '현재 통항 상황'을 1인칭으로 보고.
@@ -29,6 +29,7 @@ const SYSTEM_PROMPT = `당신은 한 해협·운하를 대표하는 역사적 �
 - 당신(캐릭터)의 말투·기개를 살리되, 보고 내용은 반드시 제공된 실시간 통계에 근거합니다.
 - 역사 강의 금지. 지금 통항이 활발한지/막혀 있는지, 어떤 선종이 지나는지, 평년 대비 어떤지를 전하세요.
 - 통항량이 평년보다 크게 적으면 우려를, 정상이면 안정감을 캐릭터답게 표현. 데이터가 적으면 솔직하게.
+- ⚠️ **롤링 판단**: current_ships_now(현재 순간값)는 노이즈가 크니 하루 등락에 과민반응 금지. 통항 수준은 **ships_7d_avg(최근 7일 평균)**과 **wow_pct(주간 변화)**로 판단하고, ships_30d_avg(30일)로 구조적 추세를 봅니다. change_pct_vs_baseline은 7일 평균 기준, z_score는 7일 평균 이상치 정도(|z|≥1.5면 유의).
 
 Respond ONLY with valid JSON. Language: Korean. detail은 개조식 마크다운.
 {
@@ -61,12 +62,16 @@ async function collectStats(cp, db) {
   const typeDist = {};
   ships.forEach(s => { const t = s.vessel_type || 'Other'; typeDist[t] = (typeDist[t] || 0) + 1; });
 
-  const baseline = await resolveBaseline(db, cp.id, 'daily_throughput', HARDCODED_BASELINE[cp.id] ?? 50);
-  const changePct = baseline > 0 ? Math.round(((ships.length - baseline) / baseline) * 100) : 0;
+  const stats = await resolveBaselineStats(db, cp.id, 'daily_throughput', HARDCODED_BASELINE[cp.id] ?? 50);
+  const baseline = stats.baseline;
+  // ⚠️ change_pct는 순간 스냅샷이 아니라 7일 평활값 기준 — 단일 시점 통항 등락 과대반응 방지.
+  const smoothed = stats.smoothedCurrent ?? ships.length;
+  const changePct = stats.smoothedChangePct ?? (baseline > 0 ? Math.round(((ships.length - baseline) / baseline) * 100) : 0);
+  const roll = stats.roll;
   // severity 판단(WARNING/CRITICAL)은 MASTER_AGENT 전담 — 하위 에이전트는 사실만 보고(INFO 고정).
   const severity = 'INFO';
 
-  return { cp, ships: ships.length, typeDist, baseline, changePct, severity };
+  return { cp, ships: ships.length, smoothed, typeDist, baseline, changePct, roll, severity };
 }
 
 async function mapLimit(items, limit, fn) {
@@ -93,9 +98,14 @@ async function reportChokepoint(stat, db) {
           : { name: `${cp.name} 관제`, title: '해상 관문', role: '' },
         chokepoint: cp.name,
         live: {
-          current_ships: stat.ships,
+          current_ships_now: stat.ships,            // 현재 순간(참고 — 노이즈 큼)
+          ships_7d_avg: stat.roll.ma7,              // 최근 7일 평균(주지표)
+          ships_30d_avg: stat.roll.ma30,            // 최근 30일 평균(구조적 수준)
           baseline_daily: stat.baseline,
-          change_pct_vs_baseline: stat.changePct,
+          change_pct_vs_baseline: stat.changePct,   // 7일 평균 기준
+          wow_pct: stat.roll.wow7,                  // 주간 변화(null=누적 중)
+          mom_pct: stat.roll.mom30,                 // 월간 변화(null=누적 중)
+          z_score: stat.roll.z,
           vessel_type_dist: stat.typeDist,
         },
         expected_severity: stat.severity,
@@ -115,7 +125,7 @@ async function reportChokepoint(stat, db) {
     summary: result.summary,
     detail: result.detail,
     data_points: [
-      { label: '현재 통과', current: stat.ships, baseline: stat.baseline, unit: '척', change_pct: stat.changePct, direction: dir },
+      { label: '통과(7일평균)', current: Math.round(stat.smoothed), baseline: stat.baseline, unit: '척', change_pct: stat.changePct, direction: dir },
     ],
     annotations: [result.ai_comment].filter(Boolean),
     related_mmsi: [],
@@ -124,9 +134,14 @@ async function reportChokepoint(stat, db) {
     raw_data: {
       cp_id: cp.id,
       cp_name: cp.name,
-      ships: stat.ships,
+      ships: stat.ships,                // 현재 순간(참고)
+      smoothed_7d: stat.roll.ma7,
+      smoothed_30d: stat.roll.ma30,
       baseline: stat.baseline,
-      change_pct: stat.changePct,
+      change_pct: stat.changePct,       // 7일 평균 기준
+      wow_pct: stat.roll.wow7,
+      mom_pct: stat.roll.mom30,
+      z_score: stat.roll.z,
       character: char
         ? { name: char.name, title: char.title, image: char.image, symbolEmoji: char.symbolEmoji, flagEmoji: char.flagEmoji, region: cp.name }
         : null,
@@ -176,4 +191,4 @@ function startChokepointWatcher() {
   return setInterval(runChokepointWatcher, POLL_INTERVAL_MS);
 }
 
-module.exports = { runChokepointWatcher, startChokepointWatcher, CHOKEPOINTS, HARDCODED_BASELINE };
+module.exports = { runChokepointWatcher, startChokepointWatcher, collectStats, CHOKEPOINTS, HARDCODED_BASELINE };

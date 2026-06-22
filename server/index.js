@@ -31,7 +31,10 @@ const { TRADE_PAIRS, SEASONAL_INDEX, getSeasonalCategory } = require('./data/tra
 const PORT = process.env.PORT ?? 3001;
 const SUPABASE_BATCH_INTERVAL_MS = 30 * 1000;
 const POSITIONS_FLUSH_INTERVAL_MS = 10 * 1000;  // ship_positions: 10초마다 배치 INSERT
-const RELAY_FLUSH_INTERVAL_MS = 10 * 1000;      // 브라우저 relay: 10초마다 변경분 압축 스냅샷 전송 (선박 이동 느려 체감 미미, Render egress 추가 절감)
+// 브라우저 relay: 변경분 압축 스냅샷 전송 주기. 기본 3초(응답성·egress 균형).
+// dedup(같은 mmsi 1건)+perMessageDeflate 압축+0클라이언트 skip이 유지돼 raw 중계 대비 egress는 여전히 90%+↓.
+// egress가 다시 튀면 RELAY_FLUSH_INTERVAL_MS env로 늘릴 것(예: 10000). 과거 10초는 신규 선박/이동이 최대 10초 늦게 보이던 체감 지연의 원인이었음.
+const RELAY_FLUSH_INTERVAL_MS = Number(process.env.RELAY_FLUSH_INTERVAL_MS || 3000);
 const POSITION_STORE_MIN_INTERVAL_MS = 60 * 1000; // 같은 mmsi 위치 이력은 최대 60초당 1건만 저장(쓰기량·테이블 폭증 억제)
 const POSITIONS_TTL_MS = 2 * 3600000;           // ship_positions 보존 2시간(항적 충분), 초과분 삭제
 const TTL_CLEANUP_INTERVAL_MS = 20 * 60 * 1000; // 20분마다 오래된 positions 삭제(작은 배치로 vacuum 부담↓)
@@ -462,7 +465,7 @@ setTimeout(() => startFlowReporter(),      6500);
 setTimeout(() => startKobcScraper(),       7000);  // KOBC 운임·선가 스크래핑 → freight_history
 setTimeout(() => startTankerScraper(),     7500);  // BDTI 더티탱커 운임 → freight_history (Wagner 정유 데스크)
 setTimeout(() => startKorPortStats(),      8000);  // 해양수산부 월별 공식 통계 → kor_port_monthly (국내항 보완)
-setTimeout(() => startGicomsStats(),       8500);  // GICOMS 연안 AIS 해역 밀집도 → kor_port_monthly(sea_density)
+setTimeout(() => startGicomsStats(),       8500);  // GICOMS 연안 AIS 해역 밀집도 → sea_density_daily(일별)
 // INVESTMENT_ANALYST는 항만 집계 + freight_history를 종합 → 운임 백필 + 첫 집계 후 기동
 setTimeout(() => startInvestmentAnalyst(), 20000);
 // MASTER는 하위 '사실' 보고를 종합해 severity를 판단 → 첫 배치가 쌓일 시간을 두고 120초 후 기동

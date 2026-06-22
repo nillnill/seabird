@@ -14,9 +14,11 @@ export default function DeskDetailsModal({ deskKey, seed, narrative, korStats, o
   const p = INVESTMENT_PERSONAS[deskKey];
   const strat = p?.strategy;
   const seaPorts = korStats?.sea_density_ports ?? [];
-  const seaSeries = korStats?.sea_density_series ?? [];
+  const seaSeries = korStats?.sea_density_series ?? []; // [{date,value}] 일별
   const seaMax = Math.max(1, ...seaSeries.map(s => s.value));
-  const seaYm = korStats?.sea_density_ym ? `${korStats.sea_density_ym.slice(0, 4)}.${korStats.sea_density_ym.slice(4)}` : '';
+  const seaDate = korStats?.sea_density_date ? korStats.sea_density_date.slice(5).replace('-', '.') : '';
+  const seaMa7 = korStats?.sea_density_ma7;
+  const seaWow = korStats?.sea_density_wow;
   const [data, setData] = useState(seed ?? null);
   const [loading, setLoading] = useState(!seed);
 
@@ -144,7 +146,11 @@ export default function DeskDetailsModal({ deskKey, seed, narrative, korStats, o
               <div className="rounded-lg border border-cyan-500/25 bg-cyan-950/10 p-3">
                 <div className="flex items-center justify-between gap-2 mb-1.5">
                   <p className="text-[11px] font-semibold text-cyan-200/90">🌊 해역 통항 밀집도 (GICOMS)</p>
-                  <span className="text-[9px] text-white/40 font-mono">기준 {seaYm} · 합계 {fmtNum(korStats?.sea_density)}</span>
+                  <span className="text-[9px] text-white/40 font-mono">
+                    7일평균 {fmtNum(seaMa7 != null ? Math.round(seaMa7) : korStats?.sea_density)}
+                    {seaWow != null && <span className={seaWow >= 0 ? ' text-green-400/80' : ' text-red-400/80'}> ({seaWow >= 0 ? '+' : ''}{seaWow}% WoW)</span>}
+                    <span className="text-white/30"> · 최신 {seaDate}</span>
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 mb-1.5">
                   {seaPorts.map((sp) => (
@@ -155,23 +161,25 @@ export default function DeskDetailsModal({ deskKey, seed, narrative, korStats, o
                   ))}
                 </div>
 
-                {/* 월별 추세 (시계열) */}
+                {/* 일별 추세 (최근 30일) */}
                 {seaSeries.length > 1 && (
                   <div className="mb-1.5">
-                    <p className="text-[9px] text-white/40 uppercase tracking-widest mb-1">월별 추세</p>
-                    <div className="flex items-end gap-1 h-16">
+                    <p className="text-[9px] text-white/40 uppercase tracking-widest mb-1">일별 추세 · 최근 {seaSeries.length}일</p>
+                    <div className="flex items-end gap-px h-16">
                       {seaSeries.map((s) => (
-                        <div key={s.ym} className="flex-1 flex flex-col items-center gap-0.5 group" title={`${s.ym}: ${fmtNum(s.value)}`}>
-                          <span className="text-[8px] font-mono text-cyan-200/70 opacity-0 group-hover:opacity-100 transition-opacity">{fmtNum(s.value)}</span>
+                        <div key={s.date} className="flex-1 flex flex-col items-center group" title={`${s.date}: ${fmtNum(s.value)}`}>
                           <div className="w-full rounded-t bg-cyan-400/60 hover:bg-cyan-300" style={{ height: `${Math.max(4, (s.value / seaMax) * 100)}%` }} />
-                          <span className="text-[8px] text-white/35 font-mono">{s.ym.slice(2, 4)}.{s.ym.slice(4)}</span>
                         </div>
                       ))}
+                    </div>
+                    <div className="flex justify-between text-[8px] text-white/35 font-mono mt-0.5">
+                      <span>{seaSeries[0]?.date.slice(5)}</span>
+                      <span>{seaSeries[seaSeries.length - 1]?.date.slice(5)}</span>
                     </div>
                   </div>
                 )}
                 <p className="text-[10px] text-white/45 leading-relaxed">
-                  해양수산부 GICOMS 연안 AIS 통계 — 항구 해역(±40km) 격자의 통항 수 합산. aisstream이 못 잡는 국내 연안의 통항 밀집도를 공식 데이터로 보완(과거 기준월).
+                  GICOMS 연안 AIS 통계 — 항구 해역(±40km) 격자의 통항 수 합산. aisstream이 못 잡는 국내 연안의 통항 밀집도를 <span className="text-cyan-200/70">일별 준실시간(당일까지)</span>으로 보완.
                 </p>
               </div>
             )}

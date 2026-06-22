@@ -1,6 +1,6 @@
 const { createClient } = require('@supabase/supabase-js');
 const { callClaude } = require('./claudeClient');
-const { resolveBaseline } = require('./baselineUtils');
+const { resolveBaselineStats } = require('./baselineUtils');
 const { REGION_CHARACTERS } = require('../data/regionCharacters');
 
 // 각 항구의 대표 캐릭터가 1시간에 한 번 자기 항구의 '현재 운영 상황'을 1인칭으로 보고한다.
@@ -66,6 +66,7 @@ const SYSTEM_PROMPT = `당신은 한 항구를 대표하는 역사적 인물입�
 - 역사 강의·과거 회상 금지. 지금 항구가 붐비는지/한산한지, 어떤 선종이 드나드는지, 평년 대비 어떤지를 전하세요.
 - 수치를 자연스럽게 인용하되 과장하지 마세요. 데이터가 적으면 "오늘은 관측이 한산하다"처럼 솔직하게.
 - ⚠️ slow_ships는 항만권 내 저속(≤2kn) 선박 수로 정박·계류 선박까지 포함하는 '현재 머무는 선박' 수치이지 순수 대기열이 아닙니다. "며칠을 기다린다", "예상 대기 N시간" 같은 단정은 금지하고, 평년 대비 붐비는 정도로만 표현하세요.
+- ⚠️ **롤링 판단**: slow_ships_now(현재 순간값)는 노이즈가 크니 그 하루 등락에 과민반응하지 마세요. 붐비는 정도는 **slow_ships_7d_avg(최근 7일 평균)**과 **wow_pct(주간 변화)**로 판단하고, slow_ships_30d_avg(30일)로 구조적 수준을 봅니다. change_pct_vs_baseline은 이미 7일 평균 기준입니다. z_score는 7일 평균의 이상치 정도(|z|≥1.5면 유의)입니다.
 
 Respond ONLY with valid JSON. Language: Korean. detail은 개조식 마크다운.
 {
@@ -99,18 +100,22 @@ async function queryPortShips(port) {
 //   모집단이라, severity는 절대 수가 아니라 '평년 대비 편차'로만 판단한다(대형항 상시 CRITICAL 방지).
 async function collectPortStats(port, db) {
   const ships = await queryPortShips(port);
-  const waiting = ships.filter(s => (s.speed ?? 0) <= 2.0).length;
-  const avg90d = await resolveBaseline(db, port.id, 'waiting_ships', HARDCODED_BASELINE[port.id] ?? 10);
-  const changePct = avg90d > 0 ? Math.round(((waiting - avg90d) / avg90d) * 100) : 0;
+  const waiting = ships.filter(s => (s.speed ?? 0) <= 2.0).length; // 현재 순간(참고 — 노이즈 큼)
+  const stats = await resolveBaselineStats(db, port.id, 'waiting_ships', HARDCODED_BASELINE[port.id] ?? 10);
+  const avg90d = stats.baseline;
+  // ⚠️ 보고·change_pct는 순간 스냅샷이 아니라 7일 평활값(smoothedCurrent) 기준 — 단일 시점 등락 과대반응 방지.
+  const smoothed = stats.smoothedCurrent ?? waiting;
+  const changePct = stats.smoothedChangePct ?? (avg90d > 0 ? Math.round(((waiting - avg90d) / avg90d) * 100) : 0);
+  const roll = stats.roll;
 
   const typeDist = {};
   ships.forEach(s => { const t = s.vessel_type || 'Other'; typeDist[t] = (typeDist[t] || 0) + 1; });
 
   // severity 판단(WARNING/CRITICAL)은 MASTER_AGENT 전담 — 하위 에이전트는 사실만 보고(INFO 고정).
-  // change_pct·baseline은 그대로 담아 마스터가 종합 판단에 쓴다.
+  // 평활 change_pct·롤링(7d/30d/wow/z)을 담아 마스터가 '지속된 변화'로 종합 판단하게 한다.
   const severity = 'INFO';
 
-  return { port, total: ships.length, waiting, avg90d, changePct, typeDist, severity };
+  return { port, total: ships.length, waiting, smoothed, avg90d, changePct, roll, typeDist, severity };
 }
 
 // 동시성 제한 map
@@ -139,9 +144,14 @@ async function reportPort(stat, db) {
         port: port.name,
         live: {
           ships_in_area: stat.total,
-          slow_ships: stat.waiting,                 // ≤2kn — 정박·계류 포함, 순수 대기열 아님
+          slow_ships_now: stat.waiting,             // 현재 순간 ≤2kn(참고 — 노이즈 큼)
+          slow_ships_7d_avg: stat.roll.ma7,         // 최근 7일 평균(주지표)
+          slow_ships_30d_avg: stat.roll.ma30,       // 최근 30일 평균(구조적 수준)
           baseline_slow_ships: stat.avg90d,
-          change_pct_vs_baseline: stat.changePct,
+          change_pct_vs_baseline: stat.changePct,   // 7일 평균 기준
+          wow_pct: stat.roll.wow7,                  // 주간 변화(7d vs 직전 7d, null=누적 중)
+          mom_pct: stat.roll.mom30,                 // 월간 변화(30d vs 직전 30d, null=누적 중)
+          z_score: stat.roll.z,                     // 7일 평균 이상치 정도
           vessel_type_dist: stat.typeDist,
         },
         expected_severity: stat.severity,
@@ -154,8 +164,9 @@ async function reportPort(stat, db) {
     return false;
   }
 
+  // data_points.current는 7일 평활값(순간 스냅샷 아님) — 피드·MASTER가 지속된 변화를 보게 한다.
   const dataPoints = [
-    { label: port.name, current: stat.waiting, baseline: stat.avg90d, unit: '척', change_pct: stat.changePct, direction: dir },
+    { label: `${port.name} (7일평균)`, current: Math.round(stat.smoothed), baseline: stat.avg90d, unit: '척', change_pct: stat.changePct, direction: dir },
   ];
 
   const { error } = await db.from('agent_reports').insert({
@@ -171,9 +182,14 @@ async function reportPort(stat, db) {
     raw_data: {
       port_id: port.id,
       port_name: port.name,
-      waiting: stat.waiting,
+      waiting: stat.waiting,            // 현재 순간(참고)
+      smoothed_7d: stat.roll.ma7,
+      smoothed_30d: stat.roll.ma30,
       baseline: stat.avg90d,
-      change_pct: stat.changePct,
+      change_pct: stat.changePct,       // 7일 평균 기준
+      wow_pct: stat.roll.wow7,
+      mom_pct: stat.roll.mom30,
+      z_score: stat.roll.z,
       character: char
         ? { name: char.name, title: char.title, image: char.image, symbolEmoji: char.symbolEmoji, flagEmoji: char.flagEmoji, region: port.name }
         : null,

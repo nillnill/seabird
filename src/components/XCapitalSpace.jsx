@@ -115,13 +115,13 @@ function PersonaCard({ deskKey, quant, narrative, selected, onSelect, onDetails 
         </div>
 
         {/* 해양수산부 월별 공식 통계 (AIS 사각지대 국내항 보완) */}
-        {kor && (kor.vessel_calls != null || kor.cargo != null) && (
+        {kor && (kor.vessel_calls != null || kor.cargo != null || kor.sea_density != null) && (
           <div className="flex items-center justify-between gap-2 bg-cyan-950/30 border border-cyan-500/20 rounded px-2 py-1.5">
-            <span className="text-[9px] text-cyan-300/80 shrink-0">🇰🇷 해수부 공식{korYm ? ` ${korYm}` : ''}</span>
+            <span className="text-[9px] text-cyan-300/80 shrink-0">🇰🇷 해수부·GICOMS{korYm ? ` ${korYm}` : ''}</span>
             <span className="text-[10px] font-mono text-white/85 truncate text-right">
               {kor.vessel_calls != null && <>입항 {fmt(kor.vessel_calls)}척{momTxt(kor.vessel_mom)}</>}
               {kor.cargo != null && <span className="text-white/55"> · {kor.cargo_label} {fmt(Math.round(kor.cargo / 10000))}만{momTxt(kor.cargo_mom)}</span>}
-              {kor.sea_density != null && <span className="text-cyan-200/70"> · 해역밀집 {fmt(kor.sea_density)}</span>}
+              {(kor.sea_density_ma7 ?? kor.sea_density) != null && <span className="text-cyan-200/70"> · 해역밀집7d {fmt(Math.round(kor.sea_density_ma7 ?? kor.sea_density))}{momTxt(kor.sea_density_wow)}</span>}
             </span>
           </div>
         )}

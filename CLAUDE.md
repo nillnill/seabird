@@ -55,10 +55,10 @@ seabird/
 │   ├── .env                   ← 서버 환경변수 (git 제외)
 │   ├── agents/
 │   │   ├── claudeClient.js    ← Node.js 전용 Claude API 래퍼
-│   │   ├── baselineUtils.js   ← 평년(baseline) 산출 공유 정책 resolveBaseline()/resolveBaselineStats(mean·std·n·latest·series) — 항만·초크포인트 공용
+│   │   ├── baselineUtils.js   ← 평년(baseline) 산출 공유 정책 resolveBaseline()/resolveBaselineStats(mean·std·n·latest·series + **roll{ma7,ma30,wow7,mom30,z}·smoothedCurrent·smoothedChangePct**) + rollingFromSamples() export — 항만·초크포인트·X CAPITAL 공용. 보고는 순간값 아닌 7일/30일 이동평균 기준(단일 시점 과대반응 차단)
 │   │   ├── trafficAggregator.js ← 항만·초크포인트 실시간 집계 공유 모듈 aggregatePort()/aggregateChokepoint() — 선종·기국·목적지·입출항(선종별)·원자재 유입 추정(estLadenTons). port-stats·chokepoint-stats·baselinesWriter 공용
-│   │   ├── portAnalyst.js     ← 3시간 폴링, Haiku, 항구별 대표 캐릭터가 1인칭으로 자기 항구 현재 상황 보고(항구당 1행). 데이터 있는 항구만(0척 skip), 재시작 중복 방지(최근 50분 내 skip), 동시성 5
-│   │   ├── chokepointWatcher.js ← 3시간 폴링, Haiku, 초크포인트별 대표 캐릭터 1인칭 통항 보고(초크포인트당 1행). 0척 skip(거짓 CRITICAL 방지), raw_data.cp_id·change_pct·location.chokepoint_id 보존(마커·StatusBar 소비)
+│   │   ├── portAnalyst.js     ← 3시간 폴링, Haiku, 항구별 대표 캐릭터가 1인칭으로 자기 항구 현재 상황 보고(항구당 1행). 데이터 있는 항구만(0척 skip), 재시작 중복 방지(최근 50분 내 skip), 동시성 5. **change_pct·data_points는 7일 평균(smoothedCurrent) 기준 + raw_data에 wow/mom/z** (순간 스냅샷 과대반응 차단)
+│   │   ├── chokepointWatcher.js ← 3시간 폴링, Haiku, 초크포인트별 대표 캐릭터 1인칭 통항 보고(초크포인트당 1행). 0척 skip(거짓 CRITICAL 방지), raw_data.cp_id·change_pct·location.chokepoint_id 보존(마커·StatusBar 소비). **change_pct는 7일 평균 기준 + raw_data에 wow/mom/z**
 │   │   ├── geopoliticalLinker.js ← 3시간 폴링, Sonnet, Perplexity 영문검색 → 한국어 번역
 │   │   ├── masterAgent.js     ← 3시간 폴링, Sonnet, **유일하게 severity(WARNING/CRITICAL)를 판단하는 에이전트**. 최근 3.5시간 하위 '사실' 보고를 종합(data_points 현재값·평년·change_pct + 상관관계)해 위험도 결정. index.js에서 +120초 후 기동(첫 배치 적재 대기)
 │   │   ├── weatherAgent.js    ← 3시간 폴링, Haiku, Open-Meteo 13개 해역 날씨 → 이모지 마커
@@ -68,7 +68,7 @@ seabird/
 │   │   ├── xcapData.js        ← X CAPITAL 데스크 집계 공유 모듈 buildAllDesks()/buildDeskSeries()/dwellSignals()/lagCorrelation()/freightSeries(). 3 데스크(axelrod/taylor/wagner) 정량 신호 + dwell(체류시간) 신호 + 지표별 mode 플래그(live/estimate/demo). buildDeskSeries=데스크 전 항구 합산 일별 시계열(혼잡·입항·유입·체류·운임, /api/xcap/desk-series). /api/xcap/* + investmentAnalyst 공용
 │   │   ├── tankerScraper.js   ← BDTI(발틱 더티탱커) 운임 → freight_history(Wagner 정유 데스크). investing.com은 서버 Cloudflare 403이라 best-effort+demo 폴백. env BDTI_FETCH_URL(프록시)로 라이브 가능
 │   │   ├── korPortStats.js    ← 해양수산부 공공데이터(data.go.kr) 월별 공식 통계 → kor_port_monthly. SsopVsslEtryndHarbor2(항만별 입출항, per-port)·SsopCargFrghtPrdlst2(품목별 화물처리, 전국). AIS 사각지대 국내 철강·정유항(광양·포항·당진·울산·여수) 보완. env DATA_GO_KR_KEY, 12h 폴링, sym/eym(YYYYMM) 13개월 백필
-│   │   ├── gicomsStats.js     ← GICOMS(해양안전종합정보시스템) 연안 AIS WFS → kor_port_monthly(category='sea_density'). lage_ship_stats_view(대해구 격자×일×시 AIS수)를 항구 BBOX(EPSG:3857)로 좁혀 ais 합산=해역 통항 밀집도. env GICOMS_API_KEY+domain=seabird.onrender.com(등록 도메인, 쿼리파라미터). ⚠️ ship_time은 최대 2h 단위(2h 윈도우 3개 샘플 합산), 데이터 ~수개월 지연(최신 ~2026-01), GML 응답. X CAPITAL 카드 '해역밀집'
+│   │   ├── gicomsStats.js     ← GICOMS(해양안전종합정보시스템) 연안 AIS WFS → **sea_density_daily(일별)**. lage_ship_stats_view(대해구 격자×일×시 AIS수)를 항구 BBOX(EPSG:3857)로 좁혀 ais 합산=해역 통항 밀집도. env GICOMS_API_KEY+domain=seabird.onrender.com(등록 도메인, 쿼리파라미터). **2026-06-22 GICOMS WFS 수정 → 일별·당일까지(준실시간) 제공**(이전엔 월별·수개월 지연이라 kor_port_monthly에 월 1일만 저장했음). ship_time 2h 제약은 그대로(2h 윈도우 3개 합산), GML 응답. 6h 폴링(최근 35일 백필 + 오늘·어제 재조회). X CAPITAL 카드 '해역밀집'(일별 라인·DoD)
 │   │   ├── dwellTracker.js    ← 항만 체류시간 저비용 추적. baselinesWriter 매시 스캔에 올라타 정박·대기(≤2kn) 선박을 port_presence(open ledger)에 upsert(port_presence_touch RPC), 2.5h 미관측 시 dwell_events로 마감. ship_positions(2h TTL) 미사용 → 비용 거의 0. recordPresence/closeStaleVisits/trackPortDwell/cleanupDwellEvents
 │   │   ├── investmentAnalyst.js ← 3시간 폴링, Haiku, X CAPITAL 9번째 에이전트. xcapData + 시황 종합 → 페르소나별 투자 시그널. raw_data.desks 병합
 │   │   └── baselinesWriter.js ← 60분 적재(데이터 writer — 보고 아님), aggregator로 전 지역 1회 집계 → baselines(스칼라)+traffic_snapshots(분해) 동시 적재 + dwellTracker.trackPortDwell 호출(전 항구 동일 cycleNow 공유) (무료 티어 Disk IO 절약 위해 30→60분)
@@ -109,7 +109,7 @@ seabird/
     │   └── IntroPage.jsx      ← 인트로 오버레이 (문명 게임 스타일, 맬컴 맥린 지도자 + 챕터형 4막: 지도자/역사 기술트리/능력/팁). 첫 방문 자동 1회(localStorage `seabird_intro_seen_v1`) + GNB 📜 인트로 버튼. 이미지 emoji fallback. 콘텐츠는 introContent.js
     │
     ├── hooks/
-    │   ├── useAISStream.js    ← ws://localhost:3001/relay 연결 + localStorage 즉시 복원(10분 TTL) + Supabase 선종/국적 보강(enrichFromSupabase: 로드 시 항상 + 3분 주기, updated_at 최신순) + Class B(19/24) 처리 → 지도 선종 색상. flushBuffer가 `shipOverrides`(선택 선박 dbShip 보강)를 매 500ms 적용 → 클릭 즉시 마커 색상 일치
+    │   ├── useAISStream.js    ← ws://localhost:3001/relay 연결 + localStorage 즉시 복원(10분 TTL, 8000척 초과 시 캐시 skip) + Supabase 선종/국적 보강(enrichFromSupabase: 최초 로드=전체 시드 PREFETCH_MAX=50000 **range 페이지네이션**(PostgREST max-rows 1000 우회, 10-wide 병렬 ~5s), 3분 주기=화면 보강+최신 1페이지 top-up, updated_at 최신순) + Class B(19/24) 처리 → 지도 선종 색상. flushBuffer가 `shipOverrides`(선택 선박 dbShip 보강)를 매 500ms 적용 → 클릭 즉시 마커 색상 일치
     │   └── useAgentReports.js ← Supabase Realtime 구독 (에이전트 보고 수신)
     │
     ├── store/
@@ -182,7 +182,7 @@ aisstream.io WebSocket (전 세계 BoundingBox: [[-90,-180],[90,180]])
     ↓ (단일 연결, server/index.js)
 Node.js 서버 (포트 3001)
     ├─ WebSocket relay → 브라우저 (ws://localhost:3001/relay)
-    │   ※ raw firehose를 1건씩 중계하지 않음. 변경 선박만 **2초마다 compact 배치 스냅샷**
+    │   ※ raw firehose를 1건씩 중계하지 않음. 변경 선박만 **3초마다 compact 배치 스냅샷**(RELAY_FLUSH_INTERVAL_MS env, 기본 3000)
     │     `{type:'snapshot', ships:[{mmsi,lat,lng,speed,heading,nav_status,vessel_type,ship_name,flag_country,destination,eta}]}`
     │     으로 묶어 전송(같은 선박 다중 위치보고는 dedup) + **perMessageDeflate 압축**.
     │     새 탭 접속 시 전체 스냅샷 1회(full:true). raw 중계 대비 Render egress 90%+↓.
@@ -231,7 +231,7 @@ Node.js 서버 (포트 3001)
 - 7000ms: KOBC SCRAPER (운임·선가 → freight_history)
 - 7500ms: TANKER SCRAPER (BDTI 더티탱커 → freight_history)
 - 8000ms: KOR PORT STATS (해양수산부 월별 공식 통계 → kor_port_monthly)
-- 8500ms: GICOMS STATS (연안 AIS 해역 밀집도 → kor_port_monthly.sea_density)
+- 8500ms: GICOMS STATS (연안 AIS 해역 밀집도 → sea_density_daily, 일별)
 - 20000ms: INVESTMENT ANALYST (운임 백필 + 첫 항만 집계 후 기동)
 - 120000ms: MASTER AGENT (하위 사실 보고가 쌓일 시간을 두고 기동 → severity 판단)
 
@@ -271,6 +271,8 @@ XCapitalSpace.jsx → 3 페르소나 카드(혼잡·유입·체류·운임 칩 +
 **체류시간(dwell) 신호**: `dwellSignals`가 `dwell_events`에서 항만군의 `avg_dwell_hours`·`turnover_per_day`(회전)·`trend_pct`·`pressure`(수요압력: 0.5·체류/24h·100 + 0.5·혼잡지수, 100=중립) 산출. 체류↑+혼잡↑=선석 포화→운임 강세 신호로 INVESTMENT_ANALYST 프롬프트에 투입. 마감 체류 <10건이면 demo·pressure=null.
 
 **해양수산부 공식 통계(월) 병합**: `korPortStats`가 `kor_port_monthly`에 적재한 **항만별 입항 척수(per-port)**·**전국 품목 처리량(철광석·유연탄·원유·석유정제품)**을 `korStatsForDesk`(카드 🇰🇷칩)·`buildDeskSeries`(차트 월 계단선 `korVessel`·`korCargo`)가 소비. 공식 통계는 2개월가량 지연 발행 → **캐리포워드**(최근 발행월 값을 이후 일자에 유지)로 차트에 표시. 일별 AIS 라인 + **월 계단 점선(청록 입항·분홍 화물)** 병합(`SERIES_META.step/official`). AIS가 0인 국내항도 공식 수치로 실데이터 확보. `kor_port_monthly`/`DATA_GO_KR_KEY` 없으면 demo.
+
+**GICOMS 해역 통항 밀집도(일별, 준실시간) 병합**: `gicomsStats`가 `sea_density_daily`에 적재한 국내 7항(부산·인천·광양·울산·여수·포항·당진) 일별 통항량을 `seaDensityForDesk`가 데스크별로 합산 → 최신일 값·DoD/WoW·추세·항구분해를 `korStatsForDesk`(카드·자세히 모달)·`buildDeskSeries`(차트 `seaDensity` **일별 라인**, 우축)·`investmentAnalyst`(프롬프트 `kor_official.sea_density*`)가 소비. **2026-06-22 GICOMS WFS 수정 전엔 월별·수개월 지연이라 카드 스냅샷으로만 썼으나, 이제 라이브 AIS(혼잡)와 동일 일별 케이던스 → AIS 사각지대(철강 광양·포항·당진, 정유 울산·여수)의 1차 통항 신호**로 사용. 통합 추론(SYSTEM_PROMPT): ①라이브 혼잡과 동시 확인, ②사각지대 1차 근거, ③입항·처리량 선행 프록시, ④월별 vessel_calls 교차검증, ⑤과대가중 방지. `sea_density_daily`/`GICOMS_API_KEY` 없으면 demo.
 
 **데모 모드 (중요)**: 풀 구현이지만 데이터 축적이 필요한 신호는 충분한 표본 전까지 **데모/추정으로 자동 격하하고 화면에 명시**한다. 지표별 `mode` 플래그(`xcapData`가 계산, UI `ModeBadge`로 노출):
 - `live`(실시간): 운임(KOBC 백필로 즉시)·혼잡(동적 평년 `hasDynamic`)·유입(실시간 집계)
@@ -392,6 +394,7 @@ RATE_LIMIT_API=120             ← 전역 /api IP당 분당 요청(기본 120)
 RATE_LIMIT_PAID=10             ← Claude/Perplexity 유료 엔드포인트 IP당 합산 분당 요청(기본 10)
 MAX_RELAY_CLIENTS=300          ← relay WS 전체 동시 연결 상한(egress 방어 핵심)
 MAX_RELAY_PER_IP=30            ← relay WS IP당 동시 연결 상한 — **X-Forwarded-For로 실 클라이언트 IP가 구분될 때만 적용**(프록시 뒤 XFF 없으면 미적용 → 정상 사용자 합산 차단 방지). ⚠️ 과거 '6 + 무조건 적용'은 Render 프록시 IP 합산·멀티탭·재연결로 선박이 안 보이던 회귀의 원인이었음
+RELAY_FLUSH_INTERVAL_MS=3000   ← relay 변경분 스냅샷 전송 주기(ms, 기본 3000). 낮을수록 선박 정보가 빠르게 보이나 egress↑. egress가 다시 튀면 10000으로 상향
 ```
 > `DATA_GO_KR_KEY`·`GICOMS_API_KEY`는 Render에도 동일 설정 필요(render.yaml `sync:false`로 선언). GICOMS는 발급 시 등록한 도메인(seabird.onrender.com)을 쿼리 `domain` 파라미터로 넘기므로 로컬에서도 동작.
 > **보안(공개 런칭 전 필독): `SECURITY.md`** — CORS allowlist·rate limit·WS 연결 상한은 코드에 반영됨(위 env로 제어). Supabase RLS 검증·Mapbox 도메인 제한·API 결제 경보·데이터 약관은 대시보드 작업이라 `SECURITY.md` 체크리스트 참조. `ALLOWED_ORIGINS`는 프로덕션에서 반드시 채울 것(비우면 전체 허용).
@@ -431,7 +434,8 @@ node_modules/.bin/vite build   # npx vite 사용 금지 (vite@8 설치 문제)
 | `draft_events` | 선박 입항/출항 흘수 변화(Δdraft) — X CAPITAL 화물량 추정용. **현재 미적재(빈 테이블) → 흘수 신호는 데모 모드.** 라이브 Δdraft 기록기는 후속 작업(AIS 적재 경로에 추가 예정) |
 | `port_presence` | 항만 체류 추적 open ledger (mmsi×port, first/last_seen·scans). dwellTracker가 매시 upsert(`port_presence_touch` RPC), 2.5h 미관측 시 dwell_events로 마감 후 삭제. 내부 작업 상태(anon 미노출) |
 | `dwell_events` | 마감된 항만 체류 1건(입항→출항, dwell_hours). X CAPITAL 회전속도·수요압력 신호 소스(dwellSignals·desk-series). 180일 TTL. 미생성 시 체류 신호는 데모 모드 |
-| `kor_port_monthly` | 해양수산부 월별 공식 통계(korPortStats) + GICOMS 해역 밀집도(gicomsStats). category=vessel(항만별 입항 척수)·cargo(전국 품목, port_id='KR')·**sea_density**(GICOMS 항구 해역 AIS 통항 합, port_id=우리 id). X CAPITAL 국내항 보완(korStats·korVessel/korCargo·sea_density). 미생성 시 demo |
+| `kor_port_monthly` | 해양수산부 월별 공식 통계(korPortStats). category=vessel(항만별 입항 척수)·cargo(전국 품목, port_id='KR'). X CAPITAL 국내항 보완(korStats·korVessel/korCargo). 미생성 시 demo. ※ category='sea_density'는 더 이상 적재 안 함(→ sea_density_daily로 이전) |
+| `sea_density_daily` | GICOMS 연안 AIS 해역 통항 밀집도 **일별**(port_id×obs_date, ais_sum). 2026-06-22 WFS 수정으로 일별·당일까지 제공 → 라이브 AIS와 동일 케이던스의 국내 산업항 1차 신호. X CAPITAL `seaDensityForDesk`(카드·DoD/WoW·추세·항구분해)·`buildDeskSeries`(차트 일별 라인). freight_history(obs_date) 패턴. 미생성 시 해역밀집 demo |
 
 > **freight_history·draft_events 미생성 시**: `supabase_schema.sql`의 해당 CREATE TABLE 블록을 SQL Editor에서 실행해야 함. 없으면 KOBC_SCRAPER upsert가 실패(`Could not find the table`)하고 INVESTMENT_ANALYST·`/api/xcap/*`는 **데모 모드**로 동작(혼잡·유입은 정상, 운임·상관·흘수만 '축적 중'). 생성 즉시 다음 스크래퍼 런에서 운임 1년치가 백필되어 LIVE 전환.
 
@@ -482,7 +486,7 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 11. **AIS 유휴 워치독**: aisstream WebSocket이 half-open(좀비)되면 `close`가 안 떠 재연결이 안 됨 → 서버가 조용히 수신 중단. `index.js`가 60초 무수신 시 소켓을 강제 종료해 재연결한다.
 12. **Render 배포 시 Supabase 키**: `seabird-server`의 `SUPABASE_SERVICE_ROLE_KEY`/`SUPABASE_URL`(render.yaml에서 `sync:false`)을 Render 대시보드에 **로컬 `server/.env`와 동일하게** 설정해야 함. 키가 잘못되면 서버의 모든 Supabase 작업이 `{"error":"Invalid API key"}`로 실패(항적·DB 쓰기 전부 불가)하나, AIS relay와 프론트 anon 읽기는 동작해 증상이 가려짐.
 13. **초크포인트 "통과 선박"은 통항량이 아니라 스냅샷**: `/api/chokepoint-stats`·`chokepointWatcher`의 카운트는 "해당 bbox 안에 최근 1h 내 위치가 잡힌 선박 수"(순간 스냅샷)이지, 1시간 동안 통과한 누적 통항량이 아니다. 그래서 bbox 크기·AIS 커버리지에 따라 절대값이 크게 다르다(말라카 큰 박스 = 수백, 호르무즈 무수신 ≈ 0).
-14. **평년(baseline) 산출 정책 — `agents/baselineUtils.js` `resolveBaseline(db, locationId, metric, hardcoded)`**: 항만·초크포인트 공용 헬퍼. `baselines`의 해당 metric 이력에서 **0 스냅샷(수집 공백)을 제외**한 실측 표본이 **48개 이상 + 24h 이상 분포**할 때만 그 평균을 동적 평년으로 쓰고, 그 전엔 하드코딩 기준값(초크포인트: 수에즈 58·말라카 247 등 / 항만: 부산 250·로테르담 880 등 — 2026-06 실측 중앙값 재보정)을 쓴다. **4곳이 동일 정책 공유** — `/api/chokepoint-stats`·`chokepointWatcher`(metric=`daily_throughput`), `/api/port-stats`·`portAnalyst`(metric=`waiting_ships`). 하드코딩 기준값 단일 소스는 `portAnalyst.js`(HARDCODED_BASELINE)·`chokepointWatcher.js`이며, `baselinesWriter.js`의 중복 맵은 제거됨(실측 스냅샷만 기록). (과거: 동적 `avg_90d`가 마이그레이션 이전 0들로 오염돼 평년이 0.1~16.5로 나오고, 항만은 패널=하드코딩/에이전트=오염 avg_90d로 따로 놀던 버그를 이 정책으로 통일·차단. `baselinesWriter`의 `avg_90d` 컬럼은 이제 소비되지 않고 이력 기록용.)
+14. **평년(baseline) 산출 정책 — `agents/baselineUtils.js` `resolveBaseline(db, locationId, metric, hardcoded)`**: 항만·초크포인트 공용 헬퍼. `baselines`의 해당 metric 이력에서 **0 스냅샷(수집 공백)을 제외**한 실측 표본이 **48개 이상 + 24h 이상 분포**할 때만 그 평균을 동적 평년으로 쓰고, 그 전엔 하드코딩 기준값(초크포인트: 수에즈 58·말라카 247 등 / 항만: 부산 250·로테르담 880 등 — 2026-06 실측 중앙값 재보정)을 쓴다. **4곳이 동일 정책 공유** — `/api/chokepoint-stats`·`chokepointWatcher`(metric=`daily_throughput`), `/api/port-stats`·`portAnalyst`(metric=`waiting_ships`). 하드코딩 기준값 단일 소스는 `portAnalyst.js`(HARDCODED_BASELINE)·`chokepointWatcher.js`이며, `baselinesWriter.js`의 중복 맵은 제거됨(실측 스냅샷만 기록). (과거: 동적 `avg_90d`가 마이그레이션 이전 0들로 오염돼 평년이 0.1~16.5로 나오고, 항만은 패널=하드코딩/에이전트=오염 avg_90d로 따로 놀던 버그를 이 정책으로 통일·차단. `baselinesWriter`의 `avg_90d` 컬럼은 이제 소비되지 않고 이력 기록용.) **2026-06-23: `resolveBaselineStats`가 roll(ma7/ma30/wow7/mom30/z)·smoothedCurrent도 반환 — 보고는 순간값이 아닌 7일 평균 기준으로 전환(아래 #23).**
 15. **에이전트 Claude JSON 견고성 — `agents/claudeClient.js`**: `callClaude`가 응답 JSON을 추출할 때 객체(`{}`)·배열(`[]`) 모두 지원, 코드펜스·후행콤마 제거, 파싱 실패 시 누락 콤마(`}{`→`},{`) 보정, 그래도 실패하면 **1회 재시도**(429/5xx·네트워크·파싱 실패). 또한 `max_tokens`가 작으면 큰 마크다운(예: PORT_ANALYST 30개 항만 표, MASTER 5섹션)이 잘려 "Unterminated JSON"이 나므로 충분히 잡음 — portAnalyst 4000, chokepointWatcher 6000, masterAgent 3000. 과거엔 배열 미지원+토큰 부족으로 PORT/CHOKEPOINT 보고가 주기적으로 유실됐다.
 16. **보고 카드 중복 key 방지 — `useStore.addReport`**: 초기 로드(50건) + Realtime 구독 + React StrictMode 이중 마운트로 같은 `agent_reports` 행이 중복 추가돼 React "duplicate key" 경고가 대량 발생했음 → `addReport`가 동일 `id` 존재 시 무시. (브라우저 콘솔 점검은 헤드리스 Chrome+CDP로 가능: 단 WebGL이 없으면 Mapbox가 죽으므로 `--enable-unsafe-swiftshader --use-gl=angle --use-angle=swiftshader`로 SW 렌더 활성화 필요.)
 17. **WebGL 미지원 폴백 — `MapView.jsx`**: 에러 바운더리가 없어, WebGL 비활성 브라우저에서 Mapbox 초기화 실패 시 앱 전체가 흰 화면이 됐음 → `new mapboxgl.Map`을 try/catch로 감싸 실패 시 안내 오버레이 표시(`mapError`). `map.on('error')`로 비치명적 타일 에러 콘솔 스팸도 억제.
@@ -492,7 +496,11 @@ flag_country, imo, call_sign, origin_country, dest_country, updated_at
 
 19. **`ship_positions` 폭증 → Supabase 리소스 소진 (2026-06-13 수정)**: `index.js`가 글로벌 AIS의 **모든** PositionReport를 그대로 `ship_positions`에 INSERT해, 6h TTL만으로도 **~1,130만 행**이 쌓여 무료 티어 디스크 I/O·autovacuum을 소진(대시보드 "exhausting multiple resources" 경고). 수정: ① **같은 mmsi는 60초당 1건만 저장**(`lastPositionStoredAt` throttle) → 쓰기량 10~30×↓, ② TTL **6h→2h**(`POSITIONS_TTL_MS`), ③ 정리 주기 1h→20분(작은 배치). 추가로 TTL DELETE가 풀스캔하지 않도록 `idx_ship_positions_recorded_at`(recorded_at 단독) 인덱스 필요. **기존 백로그는 `TRUNCATE ship_positions;`(SQL Editor)로 즉시 비워야 함** — 항적은 ephemeral이라 수 분 내 재축적. (ship-track 쿼리는 mmsi당 ~120점/2h로 충분.)
 
-21. **Render 대역폭(egress) 폭증 → relay 배치·압축 (2026-06-14 수정)**: `index.js`가 aisstream **글로벌 firehose의 모든 메시지를 raw 그대로 `broadcast`**해, 연결된 브라우저 1개당 월 수백 GB가 나갔다(Render Pro 25GB/월 70% 경고). aisstream→서버(수신)는 ingress라 무과금이고 **서버→브라우저 relay만 과금**이라 relay가 유일한 레버. 수정: ① **`perMessageDeflate: true`**(WSS) — AIS JSON 압축률 높음, ② **메시지마다 중계 폐기 → 변경 선박만 2초마다 compact 배치 스냅샷**(`{type:'snapshot', ships:[...]}`, `compactShip`로 의미 있는 필드만, 같은 mmsi 다중 위치보고 dedup), `relayDirty` Set으로 변경분 추적(Supabase용 `dirtyMmsi`와 별도), ③ 새 탭 접속 시 전체 스냅샷 1회(`full:true`), ④ **보는 클라이언트 0이면 전송 skip**. 프론트(`useAISStream.js` onmessage)도 raw aisstream 파서 → snapshot 파서로 교체(없는 필드는 기존값 유지). 효과: raw 중계 대비 egress 90%+↓. ⑤ **방치 탭 자동 종료**(`useAISStream.js`): 백그라운드 탭(`document.hidden`)은 즉시, 포그라운드라도 10분 무활동(`IDLE_DISCONNECT_MS`)이면 relay WS를 끊고(`intentionalCloseRef`로 5초 자동 재연결 억제), 탭 복귀·사용자 활동(mousemove/key/touch/scroll) 시 재연결한다(서버가 접속 시 full 스냅샷 재전송 → 즉시 복구). 숨김 탭은 Supabase enrich도 skip. 상태표시줄은 `PAUSED`='일시중지'로 표시. 데모 끝나고 열어둔 탭이 계속 빨아들이던 egress 차단.
+21. **Render 대역폭(egress) 폭증 → relay 배치·압축 (2026-06-14 수정)**: `index.js`가 aisstream **글로벌 firehose의 모든 메시지를 raw 그대로 `broadcast`**해, 연결된 브라우저 1개당 월 수백 GB가 나갔다(Render Pro 25GB/월 70% 경고). aisstream→서버(수신)는 ingress라 무과금이고 **서버→브라우저 relay만 과금**이라 relay가 유일한 레버. 수정: ① **`perMessageDeflate: true`**(WSS) — AIS JSON 압축률 높음, ② **메시지마다 중계 폐기 → 변경 선박만 N초마다 compact 배치 스냅샷**(`{type:'snapshot', ships:[...]}`, `compactShip`로 의미 있는 필드만, 같은 mmsi 다중 위치보고 dedup. 주기는 `RELAY_FLUSH_INTERVAL_MS` env, 기본 3000ms — 과거 10초는 선박 정보가 최대 10초 늦게 보이던 체감 지연의 원인이라 3초로 조정), `relayDirty` Set으로 변경분 추적(Supabase용 `dirtyMmsi`와 별도), ③ 새 탭 접속 시 전체 스냅샷 1회(`full:true`), ④ **보는 클라이언트 0이면 전송 skip**. 프론트(`useAISStream.js` onmessage)도 raw aisstream 파서 → snapshot 파서로 교체(없는 필드는 기존값 유지). 효과: raw 중계 대비 egress 90%+↓. ⑤ **방치 탭 자동 종료**(`useAISStream.js`): 백그라운드 탭(`document.hidden`)은 즉시, 포그라운드라도 10분 무활동(`IDLE_DISCONNECT_MS`)이면 relay WS를 끊고(`intentionalCloseRef`로 5초 자동 재연결 억제), 탭 복귀·사용자 활동(mousemove/key/touch/scroll) 시 재연결한다(서버가 접속 시 full 스냅샷 재전송 → 즉시 복구). 숨김 탭은 Supabase enrich도 skip. 상태표시줄은 `PAUSED`='일시중지'로 표시. 데모 끝나고 열어둔 탭이 계속 빨아들이던 egress 차단.
+
+23. **롤링(7일/30일) 보고 — 단일 시점 과대반응 차단 (2026-06-23)**: PORT·CHOKEPOINT·MASTER·X CAPITAL이 **순간 1시점 스냅샷 vs 평년**으로 change_pct를 내, 라이브 ships가 잠깐 비거나(예: now=0) 튀면 −100%/+수백% 거짓 경보가 났다. `baselineUtils.resolveBaselineStats`가 이제 `roll{ma7,ma30,prev7,prev30,wow7,mom30,z}`·`smoothedCurrent(=ma7)`·`smoothedChangePct`를 반환(`baselines` 이력에서 0 제외 표본의 7일/30일 이동평균). **change_pct·severity는 순간값이 아니라 7일 평균 기준**, z(|z|≥1.5만 유의)로 노이즈 게이팅, wow7/mom30로 주간·월간 추세. 적용: `portAnalyst`/`chokepointWatcher`(data_points.current=7일평균, raw_data에 wow/mom/z), `masterAgent`(프롬프트가 지속성 요구 — 단발 스파이크는 INFO), `xcapData`(congestion·sea_density 모두 7일 MA·wow·z; AIS 사각 국내항은 미관측 시 null+demo로 정직 표시 — −100% 금지). sea_density는 일변동 CoV 6~12%라 DoD는 노이즈로 강등, ma7/wow7/z가 주지표. `investmentAnalyst` 프롬프트도 "당일 등락 무시, 7일/주간·z로 판단".
+
+22. **지도 선박이 ~1,000척에서 멈춤 → PostgREST max-rows 페이지네이션 (2026-06-22 수정)**: `ships` 테이블엔 수만 행이 있는데 `useAISStream.enrichFromSupabase`의 prefetch가 `.limit(6000)`을 줘도 **이 Supabase 프로젝트의 PostgREST `max-rows`가 1000**이라 1000행만 반환 → 지도가 ~1000척에서 정체(그 1000척이 localStorage에도 저장돼 새로고침해도 1000에서 시작). 수정: `.limit(6000)` → **`range(from, from+999)` 1000행씩 페이지네이션**(`PREFETCH_MAX=6000`, `PREFETCH_PAGE=1000`). 이후 라이브 relay가 firehose에서 받는 대로 추가 증가. (대안: Supabase 대시보드 Settings→API Max rows 상향 — 모든 쿼리 egress 영향이라 코드 페이지네이션이 안전.) ⚠️ 다른 곳에서 `.limit(>1000)`을 쓰는 쿼리도 동일하게 잘리므로 주의(서버 통계 쿼리는 limit 5000을 쓰지만 실제 행이 적어 무영향).
 
 ---
 

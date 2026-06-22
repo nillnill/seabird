@@ -12,14 +12,16 @@ const SYSTEM_PROMPT = `You are MASTER AGENT (사령관), Seabird's top-level mar
 하위 에이전트들(PORT_ANALYST·CHOKEPOINT_WATCHER·WEATHER_AGENT·COMMODITY_ANALYST·GEOPOLITICAL_LINKER·FLOW_REPORTER)은 이제 '사실'만 보고하며 위험도를 판단하지 않는다(모두 INFO). 너 MASTER만이 이 사실들을 종합해 severity를 결정한다.
 
 판단 근거:
-- 각 보고의 data_points(current 현재값 vs baseline 평년, change_pct 증감률).
+- 각 보고의 data_points(current vs baseline 평년, change_pct 증감률). **change_pct·current는 이미 '최근 7일 평균' 기준**이라 단일 시점 노이즈가 제거돼 있다. 일부 보고는 wow_pct(주간 변화)·mom_pct(월간 변화)·z_score(7일 평균 이상치)를 함께 담는다.
 - 보고들 사이의 상관관계(예: 특정 해협 통항 급감 + 인근 항만 대기 급증 + 운임 상승이 연결되는가).
 - 한국 공급망 영향.
 
+⚠️ **롤링 판단 원칙(중요)**: 하루치 순간 등락이 아니라 **지속된 변화**로 위험도를 매겨라. 큰 편차여도 z_score가 작거나(|z|<1.5) 주간/월간 추세(wow_pct·mom_pct)가 뒷받침하지 않으면 단발 노이즈로 보고 격상하지 마라. WARNING↑는 7일 평균 기준 편차 + 주간 추세(또는 |z|≥1.5)가 함께 있을 때만.
+
 severity 기준:
-- CRITICAL: 다수 지역/지표가 연관된 심각한 이상(예: 핵심 초크포인트 통항 평년比 -50%대 + 연계 항만 적체 + 운임 급등).
-- WARNING: 주목할 단일·소수 이상(평년 대비 큰 편차이나 광범위 연쇄는 아님).
-- INFO: 평시 — 큰 편차·연쇄 없음.
+- CRITICAL: 다수 지역/지표가 연관된 심각한 이상이 **지속적으로**(7일 평균·주간 추세에서) 확인될 때(예: 핵심 초크포인트 7일 평균 통항 평년比 -50%대 + 연계 항만 적체 + 운임 급등).
+- WARNING: 주목할 단일·소수 이상(7일 평균 대비 큰 편차 + 주간 추세 또는 |z|≥1.5, 광범위 연쇄는 아님).
+- INFO: 평시 — 지속된 큰 편차·연쇄 없음. 단발 스파이크만 있으면 INFO.
 
 Respond ONLY with valid JSON. Language: Korean.
 {
@@ -50,7 +52,7 @@ async function runMasterAgent() {
   const cutoff = new Date(Date.now() - REPORT_WINDOW_MS).toISOString();
   const { data: recentReports } = await db
     .from('agent_reports')
-    .select('agent_id, severity, title, summary, data_points, created_at')
+    .select('agent_id, severity, title, summary, data_points, raw_data, created_at')
     .neq('agent_id', 'MASTER_AGENT')
     .gte('created_at', cutoff)
     .order('created_at', { ascending: false })
@@ -72,12 +74,14 @@ async function runMasterAgent() {
         window_minutes: Math.round(REPORT_WINDOW_MS / 60000),
         total_reports: recentReports.length,
         by_agent_counts: Object.fromEntries(Object.entries(byAgent).map(([k, v]) => [k, v.length])),
-        reports: recentReports.map(r => ({
-          agent: r.agent_id,
-          title: r.title,
-          summary: r.summary,
-          data_points: r.data_points,
-        })),
+        reports: recentReports.map(r => {
+          const rd = r.raw_data || {};
+          // 하위 보고가 담은 롤링 지표만 압축해 전달(있을 때만) — 마스터가 지속성 판단에 사용
+          const rolling = (rd.wow_pct != null || rd.mom_pct != null || rd.z_score != null)
+            ? { wow_pct: rd.wow_pct, mom_pct: rd.mom_pct, z_score: rd.z_score, smoothed_7d: rd.smoothed_7d, smoothed_30d: rd.smoothed_30d }
+            : undefined;
+          return { agent: r.agent_id, title: r.title, summary: r.summary, data_points: r.data_points, rolling };
+        }),
       }),
       maxTokens: 5000,  // 종합 detail(여러 섹션)+key_findings 길어 truncation 방지 (3000→5000)
       model: 'claude-sonnet-4-6',

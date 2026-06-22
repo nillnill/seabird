@@ -8,7 +8,7 @@
 //
 // 각 지표에 mode 플래그: 'live'(실측 충분) / 'estimate'(하드코딩 기준) / 'demo'(축적 중).
 const { aggregatePort } = require('./trafficAggregator');
-const { resolveBaselineStats } = require('./baselineUtils');
+const { resolveBaselineStats, rollingFromSamples } = require('./baselineUtils');
 
 // 데스크 정의. ports[0]은 시계열·상관용 대표 항. PORTS는 호출부(index.js)에서 주입.
 const DESKS = [
@@ -124,30 +124,74 @@ function sumByYm(rows) {
   return m;
 }
 
-// 데스크의 국내 공식 통계(월) — 입항 척수(국내항 합) + 전국 품목 처리량 + MoM.
+const addIsoDays = (iso, k) => { const dt = new Date(iso + 'T00:00:00Z'); dt.setUTCDate(dt.getUTCDate() + k); return dt.toISOString().slice(0, 10); };
+
+// 해역 통항 밀집도(GICOMS sea_density_daily, 일별 준실시간) — 데스크 국내항 합산 신호.
+// ⚠️ 일변동(CoV 6~12%)이 커서 DoD는 노이즈 — 7일/30일 이동평균·WoW·z-score를 주지표로 한다.
+// 반환: 7d/30d MA·wow7·z(주지표) + latest/dod(참고) + 최신일 항구분해 + 일별 시계열(모달). 데이터 없으면 demo.
+async function seaDensityForDesk(db, portIds, days = 30) {
+  const korPorts = portIds.filter(id => KOR_PORT_IDS.has(id));
+  const empty = { latest: null, latest_date: null, dod: null, ma7: null, ma30: null, wow7: null, z: null, trend: 'flat', ports: [], series: [], mode: 'demo' };
+  if (!korPorts.length) return empty;
+  const cutoff = new Date(Date.now() - 45 * 86400000).toISOString().slice(0, 10); // 30d MA + WoW 버퍼
+  const { data, error } = await db.from('sea_density_daily')
+    .select('port_id, obs_date, ais_sum')
+    .in('port_id', korPorts).gte('obs_date', cutoff)
+    .order('obs_date', { ascending: true });
+  if (error || !data || !data.length) return empty;
+
+  const sumByDay = {}, portsByDay = {};
+  for (const r of data) {
+    const day = String(r.obs_date).slice(0, 10), v = parseFloat(r.ais_sum);
+    if (!Number.isFinite(v)) continue;
+    sumByDay[day] = (sumByDay[day] ?? 0) + v;
+    (portsByDay[day] ??= {})[r.port_id] = (portsByDay[day][r.port_id] ?? 0) + v;
+  }
+  const daysSorted = Object.keys(sumByDay).sort();
+  if (!daysSorted.length) return empty;
+  const latestDay = daysSorted[daysSorted.length - 1], prevDay = daysSorted[daysSorted.length - 2];
+  const pct = (cur, pv) => (cur != null && pv ? Math.round(((cur - pv) / pv) * 1000) / 10 : null);
+
+  // 7일/30일 롤링 — baselineUtils 공통 헬퍼 재사용(노이즈 게이팅 z 포함)
+  const samples = daysSorted.map(d => ({ v: sumByDay[d], t: Date.parse(d + 'T00:00:00Z') }));
+  const mean = samples.reduce((a, s) => a + s.v, 0) / samples.length;
+  const std = Math.sqrt(samples.reduce((a, s) => a + (s.v - mean) ** 2, 0) / samples.length);
+  const roll = rollingFromSamples(samples, mean, std, Date.now());
+
+  const series = daysSorted.map(d => ({ date: d, v: Math.round(sumByDay[d]) }));
+  const ports = Object.entries(portsByDay[latestDay] ?? {})
+    .map(([port_id, value]) => ({ port_id, value: Math.round(value) })).sort((a, b) => b.value - a.value);
+  // 추세는 3점 기울기(trendOf) 대신 7일 vs 직전7일(wow7) 부호로 — 노이즈에 강함
+  const trend = roll.wow7 == null ? 'flat' : roll.wow7 > 3 ? 'rising' : roll.wow7 < -3 ? 'falling' : 'flat';
+  return {
+    latest: Math.round(sumByDay[latestDay]),
+    latest_date: latestDay,
+    dod: pct(sumByDay[latestDay], prevDay ? sumByDay[prevDay] : null), // 참고(노이즈)
+    ma7: roll.ma7, ma30: roll.ma30, wow7: roll.wow7, z: roll.z,        // 주지표
+    trend,
+    ports,
+    series: series.slice(-days).map(s => ({ date: s.date, value: s.v })),
+    mode: 'live',
+  };
+}
+
+// 데스크의 국내 공식 통계 — 입항 척수(월)·전국 품목 처리량(월)·MoM + GICOMS 해역밀집(일별).
 async function korStatsForDesk(db, desk) {
   const korPorts = desk.portIds.filter(id => KOR_PORT_IDS.has(id));
   const items = desk.korItems ?? [];
-  const empty = { vessel_calls: null, vessel_mom: null, cargo: null, cargo_mom: null, cargo_label: null, sea_density: null, sea_density_ym: null, sea_density_ports: [], sea_density_series: [], ports: korPorts, latest_ym: null, mode: 'demo' };
+  const empty = { vessel_calls: null, vessel_mom: null, cargo: null, cargo_mom: null, cargo_label: null, sea_density: null, sea_density_date: null, sea_density_dod: null, sea_density_ma7: null, sea_density_ma30: null, sea_density_wow: null, sea_density_z: null, sea_density_trend: null, sea_density_ports: [], sea_density_series: [], ports: korPorts, latest_ym: null, mode: 'demo' };
   if (!korPorts.length && !items.length) return empty;
 
-  const [vesRes, cargoRes, seaRes] = await Promise.all([
+  const [vesRes, cargoRes, sea] = await Promise.all([
     korPorts.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'vessel').eq('item', 'in').in('port_id', korPorts) : Promise.resolve({ data: [] }),
     items.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'cargo').eq('port_id', 'KR').in('item', items) : Promise.resolve({ data: [] }),
-    korPorts.length ? db.from('kor_port_monthly').select('port_id, period_ym, value').eq('category', 'sea_density').in('port_id', korPorts) : Promise.resolve({ data: [] }),
+    seaDensityForDesk(db, desk.portIds),
   ]);
-  const ves = sumByYm(vesRes.data), carg = sumByYm(cargoRes.data), sea = sumByYm(seaRes.data);
+  const ves = sumByYm(vesRes.data), carg = sumByYm(cargoRes.data);
   const yms = [...new Set([...Object.keys(ves), ...Object.keys(carg)])].sort();
   const latest = yms[yms.length - 1], prior = yms[yms.length - 2];
   const mom = (cur, pv) => (cur != null && pv ? Math.round(((cur - pv) / pv) * 1000) / 10 : null);
-  // 해역 통항 밀집도(GICOMS) — 최신 가용월 국내항 합 + 항구별 분해
-  const seaYms = Object.keys(sea).sort(), seaYm = seaYms[seaYms.length - 1] ?? null;
-  const seaPorts = seaYm
-    ? (seaRes.data ?? []).filter(r => r.period_ym === seaYm)
-        .map(r => ({ port_id: r.port_id, value: Math.round(parseFloat(r.value)) }))
-        .sort((a, b) => b.value - a.value)
-    : [];
-  if (!yms.length && !seaYm) return empty;
+  if (!yms.length && sea.latest == null) return empty;
 
   return {
     vessel_calls: ves[latest] ?? null,
@@ -155,13 +199,19 @@ async function korStatsForDesk(db, desk) {
     cargo: carg[latest] ?? null,
     cargo_mom: mom(carg[latest], prior ? carg[prior] : null),
     cargo_label: items.map(c => KOR_CARGO_NAMES[c] ?? c).join('+') || null,
-    sea_density: seaYm ? Math.round(sea[seaYm]) : null,
-    sea_density_ym: seaYm,
-    sea_density_ports: seaPorts,
-    sea_density_series: Object.entries(sea).sort((a, b) => a[0].localeCompare(b[0])).map(([ym, v]) => ({ ym, value: Math.round(v) })),
+    sea_density: sea.latest,
+    sea_density_date: sea.latest_date,
+    sea_density_dod: sea.dod,          // 참고(노이즈)
+    sea_density_ma7: sea.ma7,          // 주지표 — 7일 평균
+    sea_density_ma30: sea.ma30,        // 30일 평균(구조적)
+    sea_density_wow: sea.wow7,         // 주간 변화(7d vs 직전 7d)
+    sea_density_z: sea.z,              // 7일 평균 이상치(|z|≥1.5 유의)
+    sea_density_trend: sea.trend,      // wow7 부호 기반
+    sea_density_ports: sea.ports,
+    sea_density_series: sea.series,
     ports: korPorts,
     latest_ym: latest ?? null,
-    mode: (Object.keys(ves).length || Object.keys(carg).length || seaYm) ? 'live' : 'demo',
+    mode: (Object.keys(ves).length || Object.keys(carg).length || sea.latest != null) ? 'live' : 'demo',
   };
 }
 
@@ -216,8 +266,11 @@ async function dwellSignals(db, portIds, congIndex, days = 30) {
 async function buildDesk(db, desk, ports, aggMemo) {
   const portObjs = desk.portIds.map(id => ports.find(p => p.id === id)).filter(Boolean);
 
-  // 항만별 집계(메모로 중복 제거) → 혼잡·유입 합산
+  // 항만별 집계(메모로 중복 제거) → 혼잡·유입 합산.
+  // ⚠️ 혼잡은 순간 합(waitSum)이 아니라 7일 평균 합(smoothedWait)으로 index/change_pct를 낸다(단일 시점 과대반응 방지).
   let waitSum = 0, baseSum = 0, inflowSum = 0, draughtVals = [];
+  let ma7Sum = 0, prev7Sum = 0, ma7HasAny = false, prev7HasAny = false;
+  const statsPerPort = {};
   for (const p of portObjs) {
     if (!aggMemo[p.id]) aggMemo[p.id] = await aggregatePort(db, p);
     const agg = aggMemo[p.id];
@@ -225,15 +278,19 @@ async function buildDesk(db, desk, ports, aggMemo) {
     baseSum += HARDCODED_PORT_BASELINE[p.id] ?? 100;
     inflowSum += agg.commodity_inflow?.[desk.inflowKey] ?? 0;
     if (agg.avg_draught != null) draughtVals.push(agg.avg_draught);
+    const st = await resolveBaselineStats(db, p.id, 'waiting_ships', HARDCODED_PORT_BASELINE[p.id] ?? 100);
+    statsPerPort[p.id] = st;
+    if (st.roll?.ma7 != null) { ma7Sum += st.roll.ma7; ma7HasAny = true; } else { ma7Sum += agg.waiting_ships ?? 0; }
+    if (st.roll?.prev7 != null) { prev7Sum += st.roll.prev7; prev7HasAny = true; }
   }
+  const smoothedWait = ma7HasAny ? ma7Sum : waitSum; // 7일 평균 합(없으면 순간값 폴백)
 
-  // 대표 항 혼잡 시계열(상관·추세·z-score용)
+  // 대표 항 시계열(상관·z용) + 데스크 주간 변화(7d 합 vs 직전 7d 합)
   const primary = portObjs[0];
-  const stats = primary
-    ? await resolveBaselineStats(db, primary.id, 'waiting_ships', HARDCODED_PORT_BASELINE[primary.id] ?? 100)
-    : { samples: [], hasDynamic: false, mean: null, std: null, latest: null };
+  const stats = statsPerPort[primary?.id] ?? { samples: [], hasDynamic: false, mean: null, std: null, latest: null, roll: {} };
   const congDaily = toDaily(stats.samples);
-  const z = stats.std ? Math.round(((stats.latest?.v ?? 0) - stats.mean) / stats.std * 100) / 100 : null;
+  const z = stats.roll?.z ?? null;
+  const congWow = prev7HasAny && prev7Sum > 0 ? Math.round(((ma7Sum - prev7Sum) / prev7Sum) * 1000) / 10 : (stats.roll?.wow7 ?? null);
 
   // 운임 시계열 + 상관
   const freight = await freightSeries(db, desk.chartFreight);
@@ -246,8 +303,12 @@ async function buildDesk(db, desk, ports, aggMemo) {
     .in('port_id', desk.portIds);
   const draftMode = (draftN ?? 0) >= 20 ? 'live' : 'demo';
 
-  const congIndex = baseSum > 0 ? Math.round((waitSum / baseSum) * 100) : null; // 100 = 평년
-  const congPct = baseSum > 0 ? Math.round(((waitSum - baseSum) / baseSum) * 100) : 0;
+  // 관측 가능 여부 — 7일 이력도 없고 순간값도 0이면 AIS 사각지대(국내 산업항)라 혼잡 미관측.
+  // 이때 index/change_pct를 -100%로 내면 '붕괴'처럼 오인되므로 null+demo로 정직하게 표시(sea_density·공식통계로 판단).
+  const congObservable = ma7HasAny || waitSum > 0;
+  const congIndex = (congObservable && baseSum > 0) ? Math.round((smoothedWait / baseSum) * 100) : null; // 100 = 평년 (7일 평균)
+  const congPct = (congObservable && baseSum > 0) ? Math.round(((smoothedWait - baseSum) / baseSum) * 100) : null;
+  const congMode = !congObservable ? 'demo' : (stats.hasDynamic ? 'live' : 'estimate');
 
   // 체류시간(dwell) 신호 — 회전속도·대기 적체·수요압력
   const dwell = await dwellSignals(db, desk.portIds, congIndex);
@@ -257,8 +318,9 @@ async function buildDesk(db, desk, ports, aggMemo) {
   return {
     key: desk.key, persona: desk.persona, desk: desk.desk, equities: desk.equities,
     congestion: {
-      current: waitSum, baseline: baseSum, index: congIndex, change_pct: congPct, z,
-      trend: trendOf(congDaily), mode: stats.hasDynamic ? 'live' : 'estimate', ports: desk.portIds,
+      current: waitSum, baseline: baseSum, index: congIndex, change_pct: congPct, z, wow: congWow,
+      trend: congWow == null ? trendOf(congDaily) : congWow > 3 ? 'rising' : congWow < -3 ? 'falling' : 'flat',
+      mode: congMode, ports: desk.portIds,
     },
     inflow: { key: desk.inflowKey, label: desk.inflowLabel, unit: desk.inflowUnit, value: Math.round(inflowSum), mode: 'live' },
     freight: {
@@ -340,22 +402,25 @@ async function buildDeskSeries(db, desk, ports, days = 30) {
   const frByDay = {};
   for (const d of freight.daily) frByDay[d.date] = d.v;
 
-  // 해양수산부 월별 공식 통계 — 국내항 입항 척수 + 전국 품목 처리량(월별 → 일별 계단 forward-fill)
+  // 해양수산부 월별 공식 통계(입항 척수·품목 처리량, 월별 → 일별 계단) + GICOMS 해역밀집(일별)
   const korPorts = portIds.filter(id => KOR_PORT_IDS.has(id));
   const korItems = desk.korItems ?? [];
-  const [korVesRes, korCargRes, korSeaRes] = await Promise.all([
+  const [korVesRes, korCargRes, seaRes] = await Promise.all([
     korPorts.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'vessel').eq('item', 'in').in('port_id', korPorts) : Promise.resolve({ data: [] }),
     korItems.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'cargo').eq('port_id', 'KR').in('item', korItems) : Promise.resolve({ data: [] }),
-    korPorts.length ? db.from('kor_port_monthly').select('period_ym, value').eq('category', 'sea_density').in('port_id', korPorts) : Promise.resolve({ data: [] }),
+    korPorts.length ? db.from('sea_density_daily').select('obs_date, ais_sum').in('port_id', korPorts).gte('obs_date', cutoffDay) : Promise.resolve({ data: [] }),
   ]);
-  const korVesByYm = sumByYm(korVesRes.data), korCargByYm = sumByYm(korCargRes.data), korSeaByYm = sumByYm(korSeaRes.data);
+  const korVesByYm = sumByYm(korVesRes.data), korCargByYm = sumByYm(korCargRes.data);
   // 공식 통계는 2개월가량 지연 발행 → 그 달 값이 없으면 최근 발행월 값을 캐리포워드(최신 공식 수치 유지)
-  const korVesMonths = Object.keys(korVesByYm).sort(), korCargMonths = Object.keys(korCargByYm).sort(), korSeaMonths = Object.keys(korSeaByYm).sort();
+  const korVesMonths = Object.keys(korVesByYm).sort(), korCargMonths = Object.keys(korCargByYm).sort();
   const carryFwd = (map, months, ym) => { let v = null; for (const mo of months) { if (mo <= ym) v = map[mo]; else break; } return v; };
+  // 해역밀집(GICOMS) — 일자별 국내항 합산 (일별 라인, 카운트 단위라 calendar day로 합산)
+  const seaByDay = {};
+  for (const r of (seaRes.data ?? [])) { const v = parseFloat(r.ais_sum); if (Number.isFinite(v)) { const d = String(r.obs_date).slice(0, 10); seaByDay[d] = (seaByDay[d] ?? 0) + v; } }
 
   const dates = new Set([
     ...Object.keys(congByDay), ...Object.keys(inbPD), ...Object.keys(inflPD),
-    ...Object.keys(dwPD), ...Object.keys(frByDay),
+    ...Object.keys(dwPD), ...Object.keys(frByDay), ...Object.keys(seaByDay),
   ]);
   const series = [...dates].filter(d => d >= cutoffDay).sort().map(date => {
     const ym = date.slice(0, 7).replace('-', ''); // 'YYYY-MM-DD' → 'YYYYMM'
@@ -368,14 +433,14 @@ async function buildDeskSeries(db, desk, ports, days = 30) {
       freight: frByDay[date] ?? null,
       korVessel: carryFwd(korVesByYm, korVesMonths, ym),   // 월 계단(공식 입항 척수, 캐리포워드)
       korCargo: carryFwd(korCargByYm, korCargMonths, ym),  // 월 계단(전국 품목 처리량, 캐리포워드)
-      seaDensity: carryFwd(korSeaByYm, korSeaMonths, ym),  // 월 계단(GICOMS 해역 통항 밀집도, 캐리포워드)
+      seaDensity: seaByDay[date] != null ? Math.round(seaByDay[date]) : null, // 일별(GICOMS 해역 통항 밀집도)
     };
   });
 
   const korCargoLabel = korItems.map(c => KOR_CARGO_NAMES[c] ?? c).join('+') || null;
   return {
     key: desk.key, days, ports: portIds, series,
-    units: { congestion: '척', inbound: '척', inflow: desk.inflowUnit, dwell: 'h', freight: freight.unit || 'pt', korVessel: '척/월', korCargo: 'R/T·월', seaDensity: 'AIS/월' },
+    units: { congestion: '척', inbound: '척', inflow: desk.inflowUnit, dwell: 'h', freight: freight.unit || 'pt', korVessel: '척/월', korCargo: 'R/T·월', seaDensity: 'AIS/일' },
     freight: { code: desk.chartFreight, label: desk.chartFreightLabel, unit: freight.unit || 'pt' },
     korCargoLabel,
     modes: {
@@ -386,7 +451,7 @@ async function buildDeskSeries(db, desk, ports, days = 30) {
       freight: freight.mode,
       korVessel: Object.keys(korVesByYm).length ? 'live' : 'demo',
       korCargo: Object.keys(korCargByYm).length ? 'live' : 'demo',
-      seaDensity: Object.keys(korSeaByYm).length ? 'live' : 'demo',
+      seaDensity: Object.keys(seaByDay).length ? 'live' : 'demo',
     },
   };
 }
