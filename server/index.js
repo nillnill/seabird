@@ -26,6 +26,7 @@ const { startInvestmentAnalyst } = require('./agents/investmentAnalyst');
 const { startMarketScraper } = require('./agents/marketScraper');
 const { startCountryFulcrum } = require('./agents/countryFulcrumAgent');
 const { startFulcrumMonitor } = require('./agents/fulcrumMonitor');
+const { startRegionNewsCollector } = require('./agents/regionNewsCollector');
 const { buildAllDesks, freightSeries, buildDeskSeries, DESKS } = require('./agents/xcapData');
 const { cleanupDwellEvents } = require('./agents/dwellTracker');
 const { callClaude } = require('./agents/claudeClient');
@@ -483,6 +484,7 @@ setTimeout(() => startTankerScraper(),     7500);  // BDTI 더티탱커 운임 �
 setTimeout(() => startKorPortStats(),      8000);  // 해양수산부 월별 공식 통계 → kor_port_monthly (국내항 보완)
 setTimeout(() => startGicomsStats(),       8500);  // GICOMS 연안 AIS 해역 밀집도 → sea_density_daily(일별)
 setTimeout(() => startMarketScraper(),     9000);  // 원자재·광물 상장 가격(선물/ETF/주식) → freight_history(market)
+setTimeout(() => startRegionNewsCollector(), 9500); // 항만·초크포인트 뉴스 일배치 수집 → region_news (패널 뉴스탭 저장본)
 // INVESTMENT_ANALYST는 항만 집계 + freight_history를 종합 → 운임 백필 + 첫 집계 후 기동
 setTimeout(() => startInvestmentAnalyst(), 20000);
 // 지정학 Fulcrum (L1 주1회 수집·합성, L2 3h 모니터). 무거운 합성이라 다른 수집 뒤 기동.
@@ -1145,11 +1147,17 @@ app.get('/api/supply-routes', async (req, res) => {
   }
 });
 
-app.get('/api/region-news', paidLimiter, async (req, res) => {
+app.get('/api/region-news', async (req, res) => {
   const { id, type } = req.query;
   if (!id) return res.status(400).json({ error: 'id required' });
 
-  // 지역별 뉴스 검색 쿼리 매핑
+  // 1) 일배치로 저장된 최신 뉴스 우선(즉시 응답·과금 없음). regionNewsCollector가 매일 수집.
+  try {
+    const { data: stored } = await supabase.from('region_news').select('content, source, fetched_at').eq('region_id', id).maybeSingle();
+    if (stored?.content) return res.json({ source: stored.source, content: stored.content, fetched_at: stored.fetched_at, stored: true });
+  } catch { /* region_news 미생성/조회 실패 → 아래 라이브 폴백 */ }
+
+  // 2) 라이브 폴백(미수집 지역) — 지역별 뉴스 검색 쿼리 매핑
   const NEWS_QUERIES = {
     suez:          'Suez Canal shipping disruption latest 2024',
     malacca:       'Malacca Strait shipping maritime security news',

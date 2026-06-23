@@ -160,7 +160,7 @@ REGION INTEL (항만·초크포인트 클릭 → RegionIntelPanel)
 브라우저 → (현황 탭 추이) GET /api/baseline-history?locationId={id}&metric={waiting_ships|daily_throughput}&hours=24
         → 서버가 baselines 이력(0 스냅샷 제외)에서 series·평년·mean·std·z-score·추세(마지막 3표본 기울기) 반환 → Sparkline + z-score 배지
 ※ destination은 자유텍스트라 파편화 심함(LOCODE/항구명/작업명 혼재) → `destinationNormalizer.normalizeDestination`으로 국가·항구 분류. 코드류(LOCODE)·주요 항구·군소 지역항(NL/NO/DE 내륙항 등)·국가명 단어를 분류하고 나머지 긴 꼬리는 'unknown'(원문 표시). 국가 식별 ~56%(샘플 기준), 상위 빈도 목적지는 대부분 분류됨. ※ 5자 LOCODE 휴리스틱은 드물게 일반 단어를 오분류할 수 있어, COUNTRY_NAMES(국가명)를 먼저 검사.
-브라우저 → (뉴스 탭) GET /api/region-news?id={id}&type={type} → Perplexity 영문 검색 → Claude 한국어 번역
+브라우저 → (뉴스 탭) GET /api/region-news?id={id}&type={type} → **저장본 우선**(`region_news` 일배치 수집분 즉시 반환·무과금). 미수집 지역만 라이브 폴백(Perplexity 영문 → Claude 번역). regionNewsCollector(매일)가 37개 지역 최근 1주 뉴스를 미리 수집·저장.
 ※ 실시간 현황이 전부 0이면 ships 테이블에 신선한 행이 없다는 뜻 — upsert 실패(아래 nav_status 이슈) 또는 AIS 커버리지 공백을 의심.
 ※ 상태/입출항 파생 지표는 nav_status·destination이 aisstream 무료 티어에서 거의 비어 있어(각 0%·~3%) 100% 채워지는 speed·heading(COG)으로 추정한다: 상태=속력대 구간(정박<0.5 / 대기≤2 / 기동<5 / 항행≥5kn), 입출항=항행 중(≥3kn) 선박의 COG가 항구 중심을 향하면 입항·반대면 출항.
 
@@ -233,6 +233,7 @@ Node.js 서버 (포트 3001)
 - 8000ms: KOR PORT STATS (해양수산부 월별 공식 통계 → kor_port_monthly)
 - 8500ms: GICOMS STATS (연안 AIS 해역 밀집도 → sea_density_daily, 일별)
 - 9000ms: MARKET SCRAPER (원자재·광물 상장 가격 선물/ETF/주식 → freight_history category='market', 12h)
+- 9500ms: REGION NEWS COLLECTOR (37개 항만·초크포인트 최근 1주 뉴스 → region_news, 매일 1회)
 - 30000ms: COUNTRY FULCRUM (지정학 L0+L1, 주1회 — WB·Perplexity 현지언어·라이브 종합 → country_fulcrum/_indicators + 공급루트)
 - 40000ms: FULCRUM MONITOR (지정학 L2, 3h — fulcrum 구동 라이브 스트림 롤링 감시 → FULCRUM_MONITOR 경보)
 - 20000ms: INVESTMENT ANALYST (운임 백필 + 첫 항만 집계 후 기동)
@@ -462,6 +463,7 @@ node_modules/.bin/vite build   # npx vite 사용 금지 (vite@8 설치 문제)
 | `country_indicators` | **지정학 Fulcrum 원자 지표**(1행=1지표, 재집계용). World Bank 등 공식 지표 → countryFulcrumAgent 적재. (country_code, domain, metric_key, value, source, as_of) |
 | `country_fulcrum` | **지정학 Fulcrum 합성**(국가별 4제약 사실목록 + fulcrum_constraint + 방향). countryFulcrumAgent(L1) 적재, fulcrumMonitor(L2)가 방향 갱신. `/api/country-fulcrum` |
 | `country_supply_routes` | **에너지·광물 공급 루트**(수입국×품목×공급원×%, searoute LineString, 지나는 초크포인트). supplyRoutes 엔진 적재. `/api/supply-routes`·SupplyRouteLayer |
+| `region_news` | 항만·초크포인트 뉴스 **일배치 저장**(region_id PK, 최신 1주 한국어 content). regionNewsCollector(매일)가 Perplexity→Claude 번역→upsert. `/api/region-news`가 저장본 즉시 서빙(라이브 폴백). 미생성 시 라이브 폴백 |
 | `sea_density_daily` | GICOMS 연안 AIS 해역 통항 밀집도 **일별**(port_id×obs_date, ais_sum). 2026-06-22 WFS 수정으로 일별·당일까지 제공 → 라이브 AIS와 동일 케이던스의 국내 산업항 1차 신호. X CAPITAL `seaDensityForDesk`(카드·DoD/WoW·추세·항구분해)·`buildDeskSeries`(차트 일별 라인). freight_history(obs_date) 패턴. 미생성 시 해역밀집 demo |
 
 > **freight_history·draft_events 미생성 시**: `supabase_schema.sql`의 해당 CREATE TABLE 블록을 SQL Editor에서 실행해야 함. 없으면 KOBC_SCRAPER upsert가 실패(`Could not find the table`)하고 INVESTMENT_ANALYST·`/api/xcap/*`는 **데모 모드**로 동작(혼잡·유입은 정상, 운임·상관·흘수만 '축적 중'). 생성 즉시 다음 스크래퍼 런에서 운임 1년치가 백필되어 LIVE 전환.

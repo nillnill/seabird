@@ -265,6 +265,16 @@ CREATE TABLE IF NOT EXISTS country_supply_routes (
 );
 CREATE INDEX IF NOT EXISTS idx_country_supply_routes ON country_supply_routes (importer_code, commodity);
 
+-- ── region_news: 항만·초크포인트 뉴스 일배치 저장(지역당 1행, 최신 1주) ─────────
+-- regionNewsCollector(매일)가 Perplexity 수집→Claude 번역→upsert. /api/region-news가 저장본을 즉시 서빙.
+CREATE TABLE IF NOT EXISTS region_news (
+  region_id   VARCHAR(30) PRIMARY KEY,
+  region_type VARCHAR(12),               -- 'port' | 'chokepoint'
+  content     TEXT,                       -- 한국어 번역 뉴스(개조식)
+  source      VARCHAR(20),                -- 'perplexity'
+  fetched_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ── RLS (최소 설정) ──────────────────────────────────────────────────────────
 ALTER TABLE agent_reports ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_read_reports" ON agent_reports FOR SELECT USING (true);
@@ -280,3 +290,5 @@ ALTER TABLE kor_port_monthly ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_read_kor_port_monthly" ON kor_port_monthly FOR SELECT USING (true);
 ALTER TABLE sea_density_daily ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_read_sea_density_daily" ON sea_density_daily FOR SELECT USING (true);
+ALTER TABLE region_news ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "anon_read_region_news" ON region_news FOR SELECT USING (true);
