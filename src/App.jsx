@@ -4,6 +4,7 @@ import CommandFeed from './components/CommandFeed.jsx';
 import StatusBar from './components/StatusBar.jsx';
 import ShipDetailPanel from './components/ShipDetailPanel.jsx';
 import RegionIntelPanel from './components/RegionIntelPanel.jsx';
+import CountryFulcrumPanel from './components/CountryFulcrumPanel.jsx';
 import StatsDashboard from './components/StatsDashboard.jsx';
 import XCapitalSpace from './components/XCapitalSpace.jsx';
 import IntroPage from './components/IntroPage.jsx';
@@ -17,7 +18,7 @@ import useStore from './store/useStore.js';
 const INTRO_SEEN_KEY = 'seabird_intro_seen_v1';
 
 export default function App() {
-  const { selectedShip, selectedRegion, showXCapital, openIntro, openDeck, openSlides } = useStore();
+  const { selectedShip, selectedRegion, selectedCountry, showXCapital, openIntro, openDeck, openSlides } = useStore();
 
   // 첫 방문 시 인트로 1회 자동 노출. (지역 디폴트 선택 없음 — 한·일이 보이는 전체 뷰로 시작)
   // /소개(또는 /deck) 경로로 접속하면 발표자료 뷰어를, /발표(또는 /slides) 경로면 슬라이드 뷰어를 자동으로 연다(공유 링크용).
@@ -48,6 +49,7 @@ export default function App() {
           <MapView />
           {selectedShip && <ShipDetailPanel />}
           {selectedRegion && <RegionIntelPanel />}
+          {selectedCountry && <CountryFulcrumPanel />}
         </div>
         <CommandFeed />
       </div>

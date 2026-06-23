@@ -38,6 +38,7 @@ const AGENT_CONFIG = {
   FLOW_REPORTER:       { icon: '🛢️', label: 'FLOW' },
   INVESTMENT_ANALYST:  { icon: '💼', label: 'X CAPITAL' },
   MASTER_AGENT:        { icon: '🧭', label: 'MASTER' },
+  FULCRUM_MONITOR:     { icon: '⚖️', label: 'FULCRUM' },
 };
 
 function DataPointChip({ dp }) {

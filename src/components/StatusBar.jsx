@@ -29,7 +29,7 @@ function CpChip({ cpId, changePct, severity }) {
 }
 
 export default function StatusBar() {
-  const { wsStatus, shipCount, reports, toggleXCapital, openIntro, toggleDeck, openGuide } = useStore();
+  const { wsStatus, shipCount, reports, toggleXCapital, openIntro, toggleDeck, openGuide, toggleCountryLayer, showCountryLayer } = useStore();
   const { dot, label } = STATUS_CONFIG[wsStatus] ?? STATUS_CONFIG.DISCONNECTED;
 
   // 첫 방문엔 가이드 버튼이 통통 튀어 가시성 확보 → 한 번 누르면 멈춤(localStorage)
@@ -97,6 +97,15 @@ export default function StatusBar() {
           >
             <span>💼</span>
             <span className="hidden sm:inline">X Capital</span>
+          </button>
+          <button
+            onClick={toggleCountryLayer}
+            aria-label="지정학 Fulcrum"
+            title="지정학 Fulcrum — 국가별 제약·공급루트"
+            className={`flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1 rounded border transition-colors ${showCountryLayer ? 'border-purple-400/70 bg-purple-900/30 text-purple-200' : 'border-purple-600/40 hover:border-purple-500/70 hover:bg-purple-900/20 text-purple-400/80 hover:text-purple-300'}`}
+          >
+            <span>🌐</span>
+            <span className="hidden sm:inline">지정학</span>
           </button>
           <button
             onClick={startGuide}

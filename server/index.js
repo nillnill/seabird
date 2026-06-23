@@ -23,6 +23,9 @@ const { startTankerScraper } = require('./agents/tankerScraper');
 const { startKorPortStats } = require('./agents/korPortStats');
 const { startGicomsStats } = require('./agents/gicomsStats');
 const { startInvestmentAnalyst } = require('./agents/investmentAnalyst');
+const { startMarketScraper } = require('./agents/marketScraper');
+const { startCountryFulcrum } = require('./agents/countryFulcrumAgent');
+const { startFulcrumMonitor } = require('./agents/fulcrumMonitor');
 const { buildAllDesks, freightSeries, buildDeskSeries, DESKS } = require('./agents/xcapData');
 const { cleanupDwellEvents } = require('./agents/dwellTracker');
 const { callClaude } = require('./agents/claudeClient');
@@ -479,8 +482,12 @@ setTimeout(() => startKobcScraper(),       7000);  // KOBC 운임·선가 스크
 setTimeout(() => startTankerScraper(),     7500);  // BDTI 더티탱커 운임 → freight_history (Wagner 정유 데스크)
 setTimeout(() => startKorPortStats(),      8000);  // 해양수산부 월별 공식 통계 → kor_port_monthly (국내항 보완)
 setTimeout(() => startGicomsStats(),       8500);  // GICOMS 연안 AIS 해역 밀집도 → sea_density_daily(일별)
+setTimeout(() => startMarketScraper(),     9000);  // 원자재·광물 상장 가격(선물/ETF/주식) → freight_history(market)
 // INVESTMENT_ANALYST는 항만 집계 + freight_history를 종합 → 운임 백필 + 첫 집계 후 기동
 setTimeout(() => startInvestmentAnalyst(), 20000);
+// 지정학 Fulcrum (L1 주1회 수집·합성, L2 3h 모니터). 무거운 합성이라 다른 수집 뒤 기동.
+setTimeout(() => startCountryFulcrum(),     30000); // L0+L1: 주1회 4제약·fulcrum·공급루트
+setTimeout(() => startFulcrumMonitor(),     40000); // L2: 3h fulcrum-긴장 모니터
 // MASTER는 하위 '사실' 보고를 종합해 severity를 판단 → 첫 배치가 쌓일 시간을 두고 120초 후 기동
 setTimeout(() => startMasterAgent(),        120000);
 
@@ -1083,6 +1090,57 @@ app.get('/api/comparison-board', async (req, res) => {
     res.json(payload);
   } catch (err) {
     console.error('[COMPARISON_BOARD] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── 지정학 Fulcrum (Geopolitical Alpha) ──────────────────────────────────────
+// 국가별 4제약 사실목록 + fulcrum + 원자 지표(country_indicators). 60초 캐시.
+app.get('/api/country-fulcrum', async (req, res) => {
+  const code = String(req.query.code ?? '').toUpperCase();
+  if (!code) return res.status(400).json({ error: 'code required' });
+  const cached = cacheGet(`fulcrum:${code}`);
+  if (cached) return res.json(cached);
+  try {
+    const [{ data: fulcrum }, { data: indicators }] = await Promise.all([
+      supabase.from('country_fulcrum').select('*').eq('country_code', code).maybeSingle(),
+      supabase.from('country_indicators').select('domain, metric_key, value, unit, source, as_of').eq('country_code', code),
+    ]);
+    const payload = { code, fulcrum: fulcrum ?? null, indicators: indicators ?? [] };
+    cacheSet(`fulcrum:${code}`, payload);
+    res.json(payload);
+  } catch (err) {
+    console.error('[COUNTRY_FULCRUM_API] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 에너지·광물 공급 루트(공급원별 %·route_geojson·초크포인트) + 초크포인트 라이브 status 머지. 60초 캐시.
+app.get('/api/supply-routes', async (req, res) => {
+  const code = String(req.query.code ?? '').toUpperCase();
+  const commodity = req.query.commodity ? String(req.query.commodity) : null;
+  if (!code) return res.status(400).json({ error: 'code required' });
+  const cacheKey = `routes:${code}:${commodity ?? 'all'}`;
+  const cached = cacheGet(cacheKey);
+  if (cached) return res.json(cached);
+  try {
+    let q = supabase.from('country_supply_routes').select('*').eq('importer_code', code);
+    if (commodity) q = q.eq('commodity', commodity);
+    const { data: routes } = await q;
+    // 초크포인트 라이브 status 머지(최근 CHOKEPOINT_WATCHER 보고)
+    const { data: cpReports } = await supabase.from('agent_reports')
+      .select('raw_data, severity, created_at').eq('agent_id', 'CHOKEPOINT_WATCHER')
+      .order('created_at', { ascending: false }).limit(40);
+    const cpStatus = {};
+    for (const r of (cpReports ?? [])) {
+      const id = r.raw_data?.cp_id;
+      if (id && !cpStatus[id]) cpStatus[id] = { severity: r.severity, change_pct: r.raw_data?.change_pct ?? null };
+    }
+    const payload = { code, commodity, routes: routes ?? [], chokepoint_status: cpStatus };
+    cacheSet(cacheKey, payload);
+    res.json(payload);
+  } catch (err) {
+    console.error('[SUPPLY_ROUTES_API] error:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

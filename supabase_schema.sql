@@ -217,6 +217,54 @@ CREATE TABLE IF NOT EXISTS sea_density_daily (
 );
 CREATE INDEX IF NOT EXISTS idx_sea_density_daily ON sea_density_daily (port_id, obs_date DESC);
 
+-- ── 지정학 Fulcrum (Geopolitical Alpha) — 국가별 제약·공급루트 ─────────────────
+-- 데이터 모델: 원자(재사용·시계열·출처) ↔ 합성(표현) 분리 → 2·3차 가공 대비.
+-- country_indicators = 원자(모든 공식/파생 지표 1행=1지표). country_fulcrum = 합성(4제약 사실목록+fulcrum).
+-- country_supply_routes = 에너지·광물 수입 의존(공급원×%)+해상 루트 지오메트리(searoute)+초크포인트 위험포인트.
+CREATE TABLE IF NOT EXISTS country_indicators (
+  id           BIGSERIAL PRIMARY KEY,
+  country_code TEXT NOT NULL,                 -- ISO3
+  domain       TEXT NOT NULL,                 -- political|market|geopolitics|legal|maritime
+  metric_key   TEXT NOT NULL,                 -- unemployment|gdp_growth|energy_import_dep|oil_dependence_pct ...
+  value        NUMERIC,
+  text_value   TEXT,
+  unit         TEXT,
+  source       TEXT,                          -- WorldBank|OECD|UNComtrade|EIA|USGS|Perplexity|Seabird
+  as_of        DATE,
+  captured_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (country_code, domain, metric_key, as_of)
+);
+CREATE INDEX IF NOT EXISTS idx_country_indicators ON country_indicators (country_code, domain, as_of DESC);
+
+CREATE TABLE IF NOT EXISTS country_fulcrum (
+  country_code        TEXT PRIMARY KEY,
+  country_name        TEXT,
+  fulcrum_constraint  TEXT,                   -- political|market|geopolitics|legal
+  fulcrum_summary     TEXT,                   -- 넷 어세스먼트 서술(점수 아님)
+  fulcrum_direction   TEXT,                   -- tightening|loosening|stable
+  constraints         JSONB,                  -- {political:[{fact,value,unit,source,as_of,trend?}], market:[...], geopolitics:[...], legal:[...]}
+  maritime_streams    JSONB,                  -- 우리 라이브 스트림(초크포인트 의존·기국·유입·운임)
+  sources             JSONB,
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS country_supply_routes (
+  id            BIGSERIAL PRIMARY KEY,
+  importer_code TEXT NOT NULL,                -- 수입국 ISO3
+  commodity     TEXT NOT NULL,               -- crude|refined|lng|coal|iron_ore|copper|nickel|rare_earth|grain
+  supplier_code TEXT,                         -- 공급원 ISO3
+  supplier_name TEXT,
+  share_pct     NUMERIC,                      -- 공급원별 수입 비중 %
+  route_geojson JSONB,                        -- searoute LineString Feature
+  chokepoints   JSONB,                        -- 루트가 지나는 초크포인트 id 목록(위험포인트)
+  distance_nm   NUMERIC,
+  source        TEXT,                         -- UNComtrade|EIA|curated
+  as_of         DATE,
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (importer_code, commodity, supplier_code)
+);
+CREATE INDEX IF NOT EXISTS idx_country_supply_routes ON country_supply_routes (importer_code, commodity);
+
 -- ── RLS (최소 설정) ──────────────────────────────────────────────────────────
 ALTER TABLE agent_reports ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "anon_read_reports" ON agent_reports FOR SELECT USING (true);

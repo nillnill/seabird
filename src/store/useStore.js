@@ -115,6 +115,21 @@ const useStore = create((set) => ({
   // 날씨 마커 (WeatherMarkers용) — 감시 지점별 이모지/심각도
   weatherMarkers: [],
   setWeatherMarkers: (points) => set({ weatherMarkers: points }),
+
+  // ── 지정학 Fulcrum (국가 레이어 + 패널 + 공급루트) ──
+  showCountryLayer: false, // 🌐 '지정학' 모드 토글 (국가 포인트 표시)
+  toggleCountryLayer: () => set((state) => {
+    const on = !state.showCountryLayer;
+    return on ? { showCountryLayer: true } : { showCountryLayer: false, selectedCountry: null, activeSupplyRoute: null };
+  }),
+  selectedCountry: null, // { code, name, lat, lng }
+  setSelectedCountry: (c) => set(c
+    ? { selectedCountry: c, selectedShip: null, selectedRegion: null, mobileView: 'map',
+        ...(Number.isFinite(c.lat) && Number.isFinite(c.lng) ? { mapCenter: [c.lng, c.lat], mapZoom: 4 } : {}) }
+    : { selectedCountry: null, activeSupplyRoute: null }),
+  // 활성 공급 루트(품목 클릭 시 지도에 그릴 대상) { code, commodity }
+  activeSupplyRoute: null,
+  setActiveSupplyRoute: (r) => set({ activeSupplyRoute: r }),
 }));
 
 export default useStore;

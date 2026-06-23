@@ -232,6 +232,9 @@ Node.js 서버 (포트 3001)
 - 7500ms: TANKER SCRAPER (BDTI 더티탱커 → freight_history)
 - 8000ms: KOR PORT STATS (해양수산부 월별 공식 통계 → kor_port_monthly)
 - 8500ms: GICOMS STATS (연안 AIS 해역 밀집도 → sea_density_daily, 일별)
+- 9000ms: MARKET SCRAPER (원자재·광물 상장 가격 선물/ETF/주식 → freight_history category='market', 12h)
+- 30000ms: COUNTRY FULCRUM (지정학 L0+L1, 주1회 — WB·Perplexity 현지언어·라이브 종합 → country_fulcrum/_indicators + 공급루트)
+- 40000ms: FULCRUM MONITOR (지정학 L2, 3h — fulcrum 구동 라이브 스트림 롤링 감시 → FULCRUM_MONITOR 경보)
 - 20000ms: INVESTMENT ANALYST (운임 백필 + 첫 항만 집계 후 기동)
 - 120000ms: MASTER AGENT (하위 사실 보고가 쌓일 시간을 두고 기동 → severity 판단)
 
@@ -283,6 +286,23 @@ XCapitalSpace.jsx → 3 페르소나 카드(혼잡·유입·체류·운임 칩 +
 **lag 상관**: `xcapData.lagCorrelation`이 일별 혼잡 시계열과 운임 시계열을 0~14일 시차로 Pearson 상관 → 최대 상관 lag/r. 겹침<14일이면 demo.
 
 > ※ X Capital은 거친 추정 기반 **실험적** 지표이며 투자 자문이 아니다. 페르소나는 *Billions* 모티프 창작 캐릭터.
+
+---
+
+## 지정학 Fulcrum — 국가별 제약 인텔리전스 (Civ 컨셉)
+
+Marko Papic *Geopolitical Alpha*의 **제약(constraints) 프레임워크**: 4대 제약(정치·정치경제 / 거시·시장 / 지정학 / 헌법·법률)을 넷 어세스먼트로 상계해 **가장 구속력 있는 제약 = fulcrum**을 찾고, 그것을 움직이는 데이터 스트림을 추적. StatusBar **🌐 지정학 토글**(`showCountryLayer`) → 국가 포인트(Civ 리더) 클릭 → `CountryFulcrumPanel`.
+
+**데이터 모델 — 원자↔합성 분리(2·3차 가공 대비)**: 원자(`country_indicators`·`country_supply_routes`·`freight_history` category='market'·기존 라이브)는 정규화·재집계 가능, 합성(`country_fulcrum`)은 표현용. 점수화 금지 — **사실 나열 + 출처 배지 + as_of**.
+
+**에이전트 전략 (L0→L1→L2)**:
+- **L0 수집**: `data/sources/worldBank.js`(무키 공식지표)·`marketScraper.js`(Yahoo 선물/ETF/주식 → freight_history market)·`supplyRoutes.js`(searoute 해상 항로 + 초크포인트 교차 → country_supply_routes). (UN Comtrade/EIA 키 있으면 % 라이브, 없으면 `countryData.supplyChains` 큐레이션 % 폴백.)
+- **L1 합성**: `countryFulcrumAgent.js`(주1회·Sonnet) — WB + **Perplexity 현지언어(최근 7~30일 시사)** + 라이브 종합 → 4제약 사실목록 + fulcrum·방향 → `country_fulcrum` + `country_indicators` 적재 + `buildRoutes`.
+- **L2 모니터**: `fulcrumMonitor.js`(3h·룰) — fulcrum 구동 라이브 스트림(초크포인트 통항·원유선물·운임)을 **롤링(7d/z, baselineUtils 재사용)**으로 감시 → `FULCRUM_MONITOR` 경보 + `fulcrum_direction` 갱신. (MASTER·X CAPITAL 프롬프트 연동은 후속.)
+
+**프론트**: `src/data/countryData.js`(12개국 큐레이션: 리더·구조제약·공급망·수출항 좌표 + 서버 CJS 미러 `server/data/countryData.js`, 코드젠 `scripts/generate_country_data.cjs`) · `CountryMarker.jsx`(국가 GL 레이어) · `CountryFulcrumPanel.jsx`(탭: Fulcrum 종합/4제약/공급루트) · `SupplyRouteLayer.jsx`(품목 클릭 → 지도 항로+%·초크포인트 위험포인트). API: `/api/country-fulcrum`·`/api/supply-routes`(60s 캐시).
+
+> ※ 정성 사실은 Perplexity 현지보도 출처라 추정치 — 출처 배지로 신뢰도 노출. 공급 루트는 searoute 근사 항로(시각화용). 12개국: 한·중·일·미·사우디·이란·이집트·싱가포르·호주·인도·러시아·독일.
 
 ---
 
@@ -386,6 +406,8 @@ ANTHROPIC_API_KEY=sk-ant-...   ← 에이전트가 서버에서 사용
 PERPLEXITY_API_KEY=pplx-...    ← 지역 뉴스 영문 검색용
 DATA_GO_KR_KEY=...             ← 해양수산부 공공데이터(data.go.kr) 항만 입출항·화물 통계
 GICOMS_API_KEY=...             ← GICOMS 연안 AIS 해역 밀집도 (등록 도메인 seabird.onrender.com)
+UN_COMTRADE_KEY=...            ← (선택) UN Comtrade 무료 키 — 공급원별 수입 의존 % 라이브. 없으면 countryData 큐레이션 % 폴백
+EIA_API_KEY=...                ← (선택) EIA 무료 키 — 에너지 수입 세분. 없으면 skip
 PORT=3001
 
 # ── 보안/어뷰징 방어 (프로덕션 권장 — server/index.js가 소비) ──
@@ -435,6 +457,9 @@ node_modules/.bin/vite build   # npx vite 사용 금지 (vite@8 설치 문제)
 | `port_presence` | 항만 체류 추적 open ledger (mmsi×port, first/last_seen·scans). dwellTracker가 매시 upsert(`port_presence_touch` RPC), 2.5h 미관측 시 dwell_events로 마감 후 삭제. 내부 작업 상태(anon 미노출) |
 | `dwell_events` | 마감된 항만 체류 1건(입항→출항, dwell_hours). X CAPITAL 회전속도·수요압력 신호 소스(dwellSignals·desk-series). 180일 TTL. 미생성 시 체류 신호는 데모 모드 |
 | `kor_port_monthly` | 해양수산부 월별 공식 통계(korPortStats). category=vessel(항만별 입항 척수)·cargo(전국 품목, port_id='KR'). X CAPITAL 국내항 보완(korStats·korVessel/korCargo). 미생성 시 demo. ※ category='sea_density'는 더 이상 적재 안 함(→ sea_density_daily로 이전) |
+| `country_indicators` | **지정학 Fulcrum 원자 지표**(1행=1지표, 재집계용). World Bank 등 공식 지표 → countryFulcrumAgent 적재. (country_code, domain, metric_key, value, source, as_of) |
+| `country_fulcrum` | **지정학 Fulcrum 합성**(국가별 4제약 사실목록 + fulcrum_constraint + 방향). countryFulcrumAgent(L1) 적재, fulcrumMonitor(L2)가 방향 갱신. `/api/country-fulcrum` |
+| `country_supply_routes` | **에너지·광물 공급 루트**(수입국×품목×공급원×%, searoute LineString, 지나는 초크포인트). supplyRoutes 엔진 적재. `/api/supply-routes`·SupplyRouteLayer |
 | `sea_density_daily` | GICOMS 연안 AIS 해역 통항 밀집도 **일별**(port_id×obs_date, ais_sum). 2026-06-22 WFS 수정으로 일별·당일까지 제공 → 라이브 AIS와 동일 케이던스의 국내 산업항 1차 신호. X CAPITAL `seaDensityForDesk`(카드·DoD/WoW·추세·항구분해)·`buildDeskSeries`(차트 일별 라인). freight_history(obs_date) 패턴. 미생성 시 해역밀집 demo |
 
 > **freight_history·draft_events 미생성 시**: `supabase_schema.sql`의 해당 CREATE TABLE 블록을 SQL Editor에서 실행해야 함. 없으면 KOBC_SCRAPER upsert가 실패(`Could not find the table`)하고 INVESTMENT_ANALYST·`/api/xcap/*`는 **데모 모드**로 동작(혼잡·유입은 정상, 운임·상관·흘수만 '축적 중'). 생성 즉시 다음 스크래퍼 런에서 운임 1년치가 백필되어 LIVE 전환.

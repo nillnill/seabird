@@ -6,6 +6,10 @@ import { ChokepointMarkers } from './ChokepointMarker.jsx';
 import MapFilter, { VESSEL_TYPE_CONFIG, ALL_VESSEL_TYPES } from './MapFilter.jsx';
 import { PortMarkers } from './PortMarker.jsx';
 import { WeatherMarkers } from './WeatherMarker.jsx';
+import { CountryMarkers } from './CountryMarker.jsx';
+import { SupplyRouteLayer } from './SupplyRouteLayer.jsx';
+
+const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
 
 mapboxgl.accessToken = import.meta.env.VITE_MAPBOX_TOKEN;
 
@@ -33,7 +37,10 @@ export default function MapView() {
   const markersRef = useRef(null);
   const portMarkersRef = useRef(null);
   const weatherMarkersRef = useRef(null);
-  const { setSelectedShip, selectedShip, selectedRegion, mapCenter, mapZoom, mapFilters, shipTrack } = useStore();
+  const countryMarkersRef = useRef(null);
+  const supplyRouteRef = useRef(null);
+  const { setSelectedShip, selectedShip, selectedRegion, mapCenter, mapZoom, mapFilters, shipTrack,
+    showCountryLayer, activeSupplyRoute } = useStore();
   const [activeStyle, setActiveStyle] = useState('dark');
   const [mapError, setMapError] = useState(false);
 
@@ -120,6 +127,10 @@ export default function MapView() {
     if (weatherMarkersRef.current) weatherMarkersRef.current.destroy?.();
     weatherMarkersRef.current = new WeatherMarkers(map);
 
+    // 공급 루트 레이어(초기 빈 데이터 — activeSupplyRoute 선택 시 채움)
+    if (supplyRouteRef.current) supplyRouteRef.current.destroy?.();
+    supplyRouteRef.current = new SupplyRouteLayer(map);
+
     // 선박 경로 소스 (초기 빈 LineString)
     if (!map.getSource('ship-track')) {
       map.addSource('ship-track', {
@@ -203,6 +214,35 @@ export default function MapView() {
       if (currentTrackPoints) map.getSource('ship-track-points')?.setData(currentTrackPoints);
     });
   }, [activeStyle]);
+
+  // 🌐 지정학 모드: 국가 포인트 레이어 토글
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const apply = () => {
+      if (showCountryLayer) {
+        if (!countryMarkersRef.current && map.getSource('ships')) countryMarkersRef.current = new CountryMarkers(map);
+      } else {
+        countryMarkersRef.current?.destroy?.();
+        countryMarkersRef.current = null;
+        supplyRouteRef.current?.clear?.();
+      }
+    };
+    if (map.isStyleLoaded()) apply(); else map.once('idle', apply);
+  }, [showCountryLayer]);
+
+  // 활성 공급 루트(품목 클릭) → /api/supply-routes 조회 후 지도에 그림
+  useEffect(() => {
+    const layer = supplyRouteRef.current;
+    if (!layer) return;
+    if (!activeSupplyRoute?.code || !activeSupplyRoute?.commodity) { layer.clear?.(); return; }
+    let alive = true;
+    fetch(`${PROXY_URL}/api/supply-routes?code=${activeSupplyRoute.code}&commodity=${activeSupplyRoute.commodity}`)
+      .then(r => r.json())
+      .then(d => { if (alive) layer.setData?.(d); })
+      .catch(() => { if (alive) layer.clear?.(); });
+    return () => { alive = false; };
+  }, [activeSupplyRoute]);
 
   // mapCenter / mapZoom flyTo
   const prevCenterRef = useRef(null);
