@@ -39,6 +39,81 @@ function FactRow({ f }) {
   );
 }
 
+// ⚡ 에너지 탭 — 자립도·1차에너지 구조·발전 믹스·발전소 설비·전기요금 (domain='energy' indicators)
+const FUEL_COLOR = { coal: '#64748B', gas: '#38BDF8', oil: '#FB923C', nuclear: '#A78BFA', hydro: '#22D3EE', solar: '#FACC15', wind: '#34D399', bio: '#84CC16', otherfossil: '#9CA3AF', otherrenew: '#4ADE80', fossil: '#EF4444', lowcarbon: '#22C55E', renew: '#34D399' };
+const FUEL_KO = { coal: '석탄', gas: '가스', oil: '석유', nuclear: '원자력', hydro: '수력', solar: '태양광', wind: '풍력', bio: '바이오', otherfossil: '기타화석', otherrenew: '기타재생', fossil: '화석', lowcarbon: '저탄소', renew: '재생' };
+
+function Bar({ label, pct, color, right }) {
+  return (
+    <div className="mb-1">
+      <div className="flex justify-between text-[11px]"><span className="text-white/80">{label}</span><span className="font-mono text-white/70">{right}</span></div>
+      <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mt-0.5"><div className="h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, pct))}%`, background: color }} /></div>
+    </div>
+  );
+}
+
+function EnergyTab({ indicators }) {
+  const byKey = {};
+  for (const r of indicators) byKey[r.metric_key] = r;
+  const v = (k) => byKey[k]?.value;
+  const asof = (k) => byKey[k]?.as_of ? String(byKey[k].as_of).slice(0, 4) : '';
+  const src = (k) => byKey[k]?.source || '';
+  const has = indicators.some(r => r.domain === 'energy');
+  if (!has && v('energy_import_dep') == null) return <p className="text-white/40 text-sm">에너지 데이터가 아직 없습니다(배치 대기).</p>;
+
+  const importDep = v('energy_import_dep');
+  const selfSuff = importDep != null ? Math.round((100 - importDep) * 10) / 10 : null;
+  const genFuels = ['coal', 'gas', 'nuclear', 'hydro', 'solar', 'wind', 'bio', 'otherfossil'].filter(k => v(`elec_gen_${k}_pct`) != null);
+  const capFuels = ['coal', 'gas', 'nuclear', 'hydro', 'solar', 'wind', 'bio'].filter(k => v(`capacity_${k}_gw`) != null);
+  const capTotal = v('capacity_total_gw');
+  const Section = ({ title, sub, children }) => (
+    <div className="mb-4"><p className="text-[10px] text-white/40 uppercase tracking-widest mb-1.5">{title}{sub ? <span className="text-white/30 normal-case"> · {sub}</span> : ''}</p>{children}</div>
+  );
+
+  return (
+    <div>
+      {selfSuff != null && (
+        <Section title="에너지 자립도" sub={`${src('energy_import_dep')||'WorldBank'} ${asof('energy_import_dep')}`}>
+          <Bar label="자립도(생산/소비)" pct={selfSuff} color={selfSuff >= 50 ? '#22C55E' : '#F59E0B'} right={`${selfSuff}%`} />
+          <p className="text-[10px] text-white/45 mt-0.5">수입의존 {importDep}% → 자립도 {selfSuff}% (높을수록 해상 수입 충격에 강함)</p>
+        </Section>
+      )}
+      {v('primary_fossil_pct') != null && (
+        <Section title="1차에너지 구조" sub={`OWID ${asof('primary_fossil_pct')}`}>
+          {['fossil', 'lowcarbon'].map(k => v(`primary_${k}_pct`) != null && <Bar key={k} label={FUEL_KO[k]} pct={v(`primary_${k}_pct`)} color={FUEL_COLOR[k]} right={`${v(`primary_${k}_pct`)}%`} />)}
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {['coal', 'gas', 'oil', 'nuclear', 'hydro', 'renew'].map(k => v(`primary_${k}_pct`) != null && (
+              <span key={k} className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/10" style={{ color: FUEL_COLOR[k] }}>{FUEL_KO[k]} {v(`primary_${k}_pct`)}%</span>
+            ))}
+          </div>
+        </Section>
+      )}
+      {genFuels.length > 0 && (
+        <Section title="발전 믹스" sub={`Ember ${asof('elec_gen_gas_pct') || asof('elec_gen_coal_pct')}`}>
+          {genFuels.sort((a, b) => v(`elec_gen_${b}_pct`) - v(`elec_gen_${a}_pct`)).map(k => (
+            <Bar key={k} label={FUEL_KO[k]} pct={v(`elec_gen_${k}_pct`)} color={FUEL_COLOR[k]} right={`${v(`elec_gen_${k}_pct`)}%`} />
+          ))}
+        </Section>
+      )}
+      {capFuels.length > 0 && capTotal && (
+        <Section title="발전소 설비 구성" sub={`Ember ${asof('capacity_total_gw')} · 총 ${capTotal}GW`}>
+          {capFuels.sort((a, b) => v(`capacity_${b}_gw`) - v(`capacity_${a}_gw`)).map(k => (
+            <Bar key={k} label={FUEL_KO[k]} pct={(v(`capacity_${k}_gw`) / capTotal) * 100} color={FUEL_COLOR[k]} right={`${v(`capacity_${k}_gw`)}GW`} />
+          ))}
+        </Section>
+      )}
+      {v('electricity_price_usd_kwh') != null && (
+        <Section title="전기요금(가정용)" sub="추정">
+          <div className="flex items-center gap-2">
+            <span className="text-base font-mono text-cyan-200">${v('electricity_price_usd_kwh')}/kWh</span>
+            <span className="text-[9px] font-mono px-1 py-0.5 rounded border text-amber-300 bg-amber-900/30 border-amber-500/40">Perplexity 추정</span>
+          </div>
+        </Section>
+      )}
+    </div>
+  );
+}
+
 export default function CountryFulcrumPanel() {
   const { selectedCountry, setSelectedCountry, activeSupplyRoute, setActiveSupplyRoute } = useStore();
   const [data, setData] = useState(null);
@@ -103,7 +178,7 @@ export default function CountryFulcrumPanel() {
 
         {/* 탭바 */}
         <div className="flex-shrink-0 flex border-b border-white/10 bg-black/20 text-[11px] overflow-x-auto">
-          {[{ k: 'fulcrum', l: '⚖ Fulcrum' }, ...CONSTRAINTS.map(c => ({ k: c.key, l: c.emoji + ' ' + c.label })), { k: 'routes', l: '🛢️ 공급루트' }].map(t => (
+          {[{ k: 'fulcrum', l: '⚖ Fulcrum' }, ...CONSTRAINTS.map(c => ({ k: c.key, l: c.emoji + ' ' + c.label })), { k: 'energy', l: '⚡ 에너지' }, { k: 'routes', l: '🛢️ 공급루트' }].map(t => (
             <button key={t.k} onClick={() => setTab(t.k)}
               className={`px-3 py-2 whitespace-nowrap transition-colors ${tab === t.k ? 'text-white border-b-2 border-purple-400 bg-white/5' : 'text-white/50 hover:text-white/80'}`}>{t.l}</button>
           ))}
@@ -146,6 +221,9 @@ export default function CountryFulcrumPanel() {
                 : (f.constraints[tab]).map((fact, i) => <FactRow key={i} f={fact} />)}
             </div>
           )}
+
+          {/* ⚡ 에너지 */}
+          {tab === 'energy' && <EnergyTab indicators={data?.indicators ?? []} />}
 
           {/* ⑥ 공급루트 & 의존도 */}
           {tab === 'routes' && (

@@ -5,6 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const fetch = require('node-fetch');
 const { callClaude } = require('./claudeClient');
 const { resolveIndicators } = require('../data/sources/resolveIndicators');
+const { getCountryEnergy } = require('../data/sources/energyProfile');
 const { buildRoutes } = require('./supplyRoutes');
 const { COUNTRY_DATA, MEDIA_DOMAINS } = require('../data/countryData');
 
@@ -19,6 +20,7 @@ const SYSTEM_PROMPT = `You are COUNTRY FULCRUM ANALYST. 프레임워크: Marko P
 - 점수화 금지. 각 제약을 '사실(fact) 목록'으로 나열한다. 수치 사실은 value·unit·source·as_of를 채우고, 정성 사실은 fact 문장 + source.
 - 4제약: political(정치·정치경제: 주요 산업·고용·실업률·여소야대 등 정치환경·정상 성향/지지율·핵심 정책), market(거시·금융시장: 성장·물가·무역의존·경상수지·원자재 노출), geopolitics(지정학: 해상 에너지·교역 의존·핵심 초크포인트·동맹/제재), legal(헌법·법률: 정부형태·법치·규제·조약).
 - 각 제약은 **3~5개 핵심 사실**로 간결히(과다 나열 금지). fact 문장은 한 줄.
+- energy_profile(자립도·1차에너지 화석/저탄소·발전믹스·설비·전기요금)는 market·geopolitics 제약의 **에너지 안보** 사실로 활용하라(예: "원자력 발전 30%로 에너지 충격 완충", "에너지 자립도 X%·화석 Y%로 해상 수입 의존").
 - ⚠️ **최신성**: political·geopolitics의 시사 사실은 local_intel의 **최근 7~30일** 사안만 쓰고, fact 끝에 날짜를 적고 as_of에 그 날짜(YYYY-MM 또는 YYYY-MM-DD)를 넣어라. 30일보다 오래된 시사는 제외(구조적 사실·공식지표는 무관). 최신 사안이 부족하면 그 도메인 사실 수를 줄여라.
 - ⚠️ **한 사실 = 한 지표(중요)**: 하나의 수치 fact는 official_indicators의 **단 하나의 지표**만 다룬다. 여러 지표(예 GDP성장 + 무역의존)를 한 문장에 합치지 마라 — 합치면 라벨이 엉뚱한 지표(WB)로 붙는다. value/unit/source/as_of는 **그 단일 지표 것 그대로**. 예: gdp_growth(source='IMF', as_of='2026-12-31')는 별도 fact로 source='IMF'·as_of='2026-12-31'; 무역의존도(WorldBank 2024)는 또 다른 fact. 임의로 'WorldBank'나 과거 연도를 붙이지 마라.
 - 넷 어세스먼트: 어느 제약이 지금 가장 구속력 있는가(fulcrum_constraint) + 한 문단 근거(fulcrum_summary) + 방향(tightening|loosening|stable) + 이 fulcrum을 움직이는 라이브 데이터 스트림 목록(maritime_streams: 감시할 초크포인트·원자재가격·통항 등).
@@ -73,6 +75,43 @@ async function fetchLocalIntel(country) {
   } catch { return ''; }
 }
 
+// 전기요금(가정용 USD/kWh) — Perplexity best-effort, 숫자 추출 실패 시 null. (무료 가격 API 부재)
+async function fetchElectricityPrice(country) {
+  if (!process.env.PERPLEXITY_API_KEY) return null;
+  try {
+    const res = await fetch('https://api.perplexity.ai/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${process.env.PERPLEXITY_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'sonar',
+        messages: [{ role: 'user', content: `What is the average residential electricity price in ${country.name} in US dollars per kWh (most recent, e.g. 2025-2026)? Reply with ONLY the number in USD/kWh (e.g. 0.12).` }],
+        search_recency_filter: 'year',
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const txt = data.choices?.[0]?.message?.content ?? '';
+    const m = txt.match(/0?\.\d{1,3}/); // 0.xx 형태
+    if (!m) return null;
+    const v = parseFloat(m[0]);
+    if (!(v > 0 && v < 2)) return null;
+    return { value: Math.round(v * 1000) / 1000, as_of: new Date().toISOString().slice(0, 10) };
+  } catch { return null; }
+}
+
+// Claude 입력용 에너지 요약(자립도·1차에너지 구조·발전 믹스·설비) — 에너지 안보 근거로 사용
+function summarizeEnergy(chosen, energyRows) {
+  const imp = chosen.find(r => r.metric_key === 'energy_import_dep')?.value;
+  const e = (k) => energyRows.find(r => r.metric_key === k)?.value;
+  return {
+    self_sufficiency_pct: imp != null ? Math.round((100 - imp) * 10) / 10 : null,
+    primary_fossil_pct: e('primary_fossil_pct'), primary_lowcarbon_pct: e('primary_lowcarbon_pct'),
+    elec_gen: { coal: e('elec_gen_coal_pct'), gas: e('elec_gen_gas_pct'), nuclear: e('elec_gen_nuclear_pct'), solar: e('elec_gen_solar_pct'), wind: e('elec_gen_wind_pct'), hydro: e('elec_gen_hydro_pct') },
+    capacity_total_gw: e('capacity_total_gw'),
+    electricity_price_usd_kwh: e('electricity_price_usd_kwh'),
+  };
+}
+
 // 원자 지표 upsert (country_indicators) — 재사용/2·3차 가공 기반
 async function saveIndicators(db, code, candidates) {
   if (!candidates?.length) return;
@@ -94,7 +133,12 @@ async function runOne(code, db) {
   if (!country) return false;
   // 최신성 우선 멀티소스(OECD 월별 > IMF 2026 > WB): chosen=metric별 최신, all=전 후보(원자 저장)
   const { chosen, all } = await resolveIndicators(code).catch(() => ({ chosen: [], all: [] }));
-  await saveIndicators(db, code, all);
+  // 에너지 프로파일(자립도·1차에너지 구조·발전믹스·설비 GW) + 전기요금(Perplexity)
+  const energyRows = await getCountryEnergy(code).catch(() => []);
+  const price = await fetchElectricityPrice(country).catch(() => null);
+  if (price) energyRows.push({ domain: 'energy', metric_key: 'electricity_price_usd_kwh', value: price.value, unit: '$/kWh', source: 'Perplexity', as_of: price.as_of });
+  await saveIndicators(db, code, [...all, ...energyRows]);
+  const energySummary = summarizeEnergy(chosen, energyRows);
   const localIntel = await fetchLocalIntel(country);
 
   let result;
@@ -105,6 +149,7 @@ async function runOne(code, db) {
         today: new Date().toISOString().slice(0, 10),
         country: country.name, code,
         structural: country.structural,
+        energy_profile: energySummary,
         official_indicators: chosen.map(r => ({ domain: r.domain, key: r.metric_key, label: r.label, value: r.value, unit: r.unit, as_of: r.as_of, source: r.source })),
         local_intel: localIntel || '(현지 검색 미가용)',
       }),
