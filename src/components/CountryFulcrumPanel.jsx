@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import useStore from '../store/useStore.js';
-import { COUNTRY_DATA, COMMODITIES } from '../data/countryData.js';
+import { COUNTRY_DATA, COMMODITIES, koCountry } from '../data/countryData.js';
 
 const PROXY_URL = import.meta.env.VITE_PROXY_URL ?? 'http://localhost:3001';
 
@@ -250,7 +250,7 @@ export default function CountryFulcrumPanel() {
                   {byCommodity[activeSupplyRoute.commodity].sort((a, b) => (b.share_pct ?? 0) - (a.share_pct ?? 0)).map((r, i) => (
                     <div key={i} className="mb-2">
                       <div className="flex items-center justify-between text-[12px]">
-                        <span className="text-white/85">{r.supplier_code}</span>
+                        <span className="text-white/85">{koCountry(r.supplier_code)} <span className="text-white/40 font-mono text-[10px]">{r.supplier_code}</span></span>
                         <span className="font-mono text-cyan-200/90">{r.share_pct ?? '?'}%</span>
                       </div>
                       <div className="h-1.5 bg-white/10 rounded-full overflow-hidden mt-0.5">

@@ -429,4 +429,15 @@ export const MEDIA_DOMAINS = {
   ZAF: ['news24.com', 'iol.co.za', 'businesslive.co.za', 'timeslive.co.za'],
 };
 
+// ISO3 → 한글 국가명 (공급루트 공급원 표기용 — 22개국 외 공급국 포함)
+export const ISO3_KO = {
+  KOR: '한국', CHN: '중국', JPN: '일본', USA: '미국', DEU: '독일', GBR: '영국', FRA: '프랑스',
+  ITA: '이탈리아', CAN: '캐나다', MEX: '멕시코', BRA: '브라질', IND: '인도', IDN: '인도네시아',
+  TUR: '튀르키예', ARG: '아르헨티나', ZAF: '남아공', RUS: '러시아', SAU: '사우디', AUS: '호주',
+  IRN: '이란', EGY: '이집트', SGP: '싱가포르',
+  KWT: '쿠웨이트', ARE: 'UAE', IRQ: '이라크', QAT: '카타르', NGA: '나이지리아', NOR: '노르웨이',
+  DZA: '알제리', LBY: '리비아', AZE: '아제르바이잔', CHL: '칠레', PER: '페루',
+};
+export const koCountry = (iso) => ISO3_KO[iso] || iso;
+
 export const COUNTRY_LIST = Object.values(COUNTRY_DATA);

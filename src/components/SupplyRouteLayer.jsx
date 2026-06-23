@@ -1,5 +1,6 @@
 // 에너지·광물 공급 루트 지도 레이어 — 품목 클릭 시 공급원별 해상 항로(LineString) + % 라벨 +
 // 루트가 지나는 초크포인트 위험포인트(라이브 severity 색). /api/supply-routes 응답을 setData로 받음.
+import { koCountry } from '../data/countryData.js';
 
 const COMMODITY_COLOR = {
   crude: '#F59E0B', refined: '#FB923C', lng: '#38BDF8', coal: '#64748B',
@@ -70,7 +71,7 @@ export class SupplyRouteLayer {
     const lineFeatures = routes.map(r => ({
       type: 'Feature',
       geometry: r.route_geojson.geometry,
-      properties: { color, pct: r.share_pct ?? 0, label: `${r.supplier_code} ${r.share_pct ?? '?'}%` },
+      properties: { color, pct: r.share_pct ?? 0, label: `${koCountry(r.supplier_code)} ${r.share_pct ?? '?'}%` },
     }));
     this.map.getSource('supply-routes')?.setData({ type: 'FeatureCollection', features: lineFeatures });
 
