@@ -300,9 +300,9 @@ Marko Papic *Geopolitical Alpha*의 **제약(constraints) 프레임워크**: 4�
 - **L1 합성**: `countryFulcrumAgent.js`(주1회·Sonnet) — WB + **Perplexity 현지언어(최근 7~30일 시사)** + 라이브 종합 → 4제약 사실목록 + fulcrum·방향 → `country_fulcrum` + `country_indicators` 적재 + `buildRoutes`.
 - **L2 모니터**: `fulcrumMonitor.js`(3h·룰) — fulcrum 구동 라이브 스트림(초크포인트 통항·원유선물·운임)을 **롤링(7d/z, baselineUtils 재사용)**으로 감시 → `FULCRUM_MONITOR` 경보 + `fulcrum_direction` 갱신. (MASTER·X CAPITAL 프롬프트 연동은 후속.)
 
-**프론트**: `src/data/countryData.js`(12개국 큐레이션: 리더·구조제약·공급망·수출항 좌표 + 서버 CJS 미러 `server/data/countryData.js`, 코드젠 `scripts/generate_country_data.cjs`) · `CountryMarker.jsx`(국가 GL 레이어) · `CountryFulcrumPanel.jsx`(탭: Fulcrum 종합/4제약/공급루트) · `SupplyRouteLayer.jsx`(품목 클릭 → 지도 항로+%·초크포인트 위험포인트). API: `/api/country-fulcrum`·`/api/supply-routes`(60s 캐시).
+**프론트**: `src/data/countryData.js`(**22개국**(G20 전체 + 이란·이집트·싱가포르 초크포인트 요충) 큐레이션: 리더·구조제약·공급망·수출항 좌표 + 서버 CJS 미러 `server/data/countryData.js`, 코드젠 `scripts/generate_country_data.cjs`) · `CountryMarker.jsx`(국가 GL 레이어) · `CountryFulcrumPanel.jsx`(탭: Fulcrum 종합/4제약/공급루트) · `SupplyRouteLayer.jsx`(품목 클릭 → 지도 항로+%·초크포인트 위험포인트). API: `/api/country-fulcrum`·`/api/supply-routes`(60s 캐시).
 
-> ※ 정성 사실은 Perplexity 현지보도 출처라 추정치 — 출처 배지로 신뢰도 노출. 공급 루트는 searoute 근사 항로(시각화용). 12개국: 한·중·일·미·사우디·이란·이집트·싱가포르·호주·인도·러시아·독일.
+> ※ 정성 사실은 Perplexity 현지보도 출처라 추정치 — 출처 배지로 신뢰도 노출. 공급 루트는 searoute 근사 항로(시각화용). 22개국: G20(한·중·일·미·독·영·프·이탈리아·캐나다·멕시코·브라질·인도·인니·튀르키예·아르헨티나·남아공·러시아·사우디·호주) + 이란·이집트·싱가포르(초크포인트 요충).
 
 ---
 

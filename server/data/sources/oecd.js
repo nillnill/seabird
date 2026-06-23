@@ -2,7 +2,7 @@
 // 현재 확정: 월별 CPI YoY(인플레). source='OECD', as_of=최신월. (실업률 OECD dataflow는 키 불안정 → IMF 폴백.)
 const fetch = require('node-fetch');
 
-const OECD_MEMBERS = new Set(['KOR', 'JPN', 'USA', 'DEU', 'AUS']); // 우리 12국 중 OECD 회원
+const OECD_MEMBERS = new Set(['KOR', 'JPN', 'USA', 'DEU', 'AUS', 'GBR', 'FRA', 'ITA', 'CAN', 'MEX', 'TUR']); // OECD 회원(월별 CPI 가능)
 
 // SDMX-JSON 2.0에서 단일 시리즈의 최신(period,value) 추출
 function latestObs(j) {

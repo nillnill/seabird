@@ -54,6 +54,11 @@ export const EXPORT_PORTS = {
   PER: { copper: [-77.1, -12.05] },                           // Callao
   ZAF: { coal: [32.06, -28.8] },                              // Richards Bay
   CAN: { crude: [-123.1, 49.3] },                             // Vancouver
+  NGA: { crude: [7.0, 4.3] },                                 // Bonny (나이지리아)
+  NOR: { crude: [5.3, 60.8], lng: [5.5, 59.3] },             // Mongstad / Kårstø
+  DZA: { lng: [-0.62, 35.8], crude: [3.06, 36.76] },         // Arzew / Algiers (알제리)
+  LBY: { crude: [18.3, 30.6] },                               // Es Sider (리비아)
+  AZE: { crude: [35.8, 36.9] },                               // BTC→Ceyhan 경유 근사 (아제르바이잔)
 };
 
 // ── 12개국 큐레이션 ──
@@ -246,6 +251,155 @@ export const COUNTRY_DATA = {
       coal:  [{ supplier: 'USA', pct: 20 }, { supplier: 'AUS', pct: 15 }, { supplier: 'ZAF', pct: 12 }],
     },
   },
+  // ── G20 추가국 (2026-06) ──
+  GBR: {
+    code: 'GBR', name: '영국', flagEmoji: '🇬🇧', symbolEmoji: '🦁',
+    coords: [-0.13, 51.51], lang: 'en',
+    leader: { name: '허레이쇼 넬슨', title: '트라팔가르 해전 제독', quote: '"영국은 모두가 본분을 다하길 기대한다."', bgFrom: '#0A1A3A', bgTo: '#1E3A6A', image: '/characters/country_gbr.webp' },
+    structural: {
+      industries: ['금융', '항공우주', '제약', '자동차'],
+      energyMaritimeDependence: '북해 생산 감소 → LNG·원유 해상 수입 의존 증가',
+      keyChokepoints: ['dover', 'suez'],
+      hypothesisFulcrum: 'market: 에너지 수입 전환(북해 감소)·금융 개방경제',
+    },
+    importMainPort: [1.3, 51.95], // Felixstowe
+    supplyChains: {
+      lng:   [{ supplier: 'USA', pct: 40 }, { supplier: 'QAT', pct: 30 }],
+      crude: [{ supplier: 'USA', pct: 25 }, { supplier: 'NOR', pct: 22 }, { supplier: 'SAU', pct: 10 }],
+    },
+  },
+  FRA: {
+    code: 'FRA', name: '프랑스', flagEmoji: '🇫🇷', symbolEmoji: '🐓',
+    coords: [2.35, 48.85], lang: 'fr',
+    leader: { name: '장바티스트 콜베르', title: '루이14세의 중상주의·해군 재상', quote: '"무역과 해군이 국부의 두 기둥이다."', bgFrom: '#0A1A4A', bgTo: '#3A2A7A', image: '/characters/country_fra.webp' },
+    structural: {
+      industries: ['항공우주', '원자력', '명품', '농식품'],
+      energyMaritimeDependence: '원자력 비중 높으나 원유·가스는 해상 수입 의존',
+      keyChokepoints: ['suez', 'dover', 'bab_el_mandeb'],
+      hypothesisFulcrum: 'political/legal: 연금·에너지 개혁 정치 + 원자력 정책',
+    },
+    importMainPort: [0.1, 49.48], // Le Havre
+    supplyChains: {
+      crude: [{ supplier: 'USA', pct: 18 }, { supplier: 'SAU', pct: 14 }, { supplier: 'NGA', pct: 12 }],
+      lng:   [{ supplier: 'USA', pct: 35 }, { supplier: 'QAT', pct: 15 }, { supplier: 'DZA', pct: 12 }],
+    },
+  },
+  ITA: {
+    code: 'ITA', name: '이탈리아', flagEmoji: '🇮🇹', symbolEmoji: '🏛️',
+    coords: [12.48, 41.89], lang: 'it',
+    leader: { name: '안드레아 도리아', title: '제노바 해군 제독', quote: '"지중해를 쥐는 자가 교역을 쥔다."', bgFrom: '#0A3A1A', bgTo: '#1A5A3A', image: '/characters/country_ita.webp' },
+    structural: {
+      industries: ['기계', '자동차', '명품', '정유'],
+      energyMaritimeDependence: '가스·원유 수입 의존(러 의존 탈피→알제리·LNG)',
+      keyChokepoints: ['suez', 'bab_el_mandeb'],
+      hypothesisFulcrum: 'market: 에너지 수입가·공급 다변화',
+    },
+    importMainPort: [8.9, 44.4], // Genoa
+    supplyChains: {
+      crude: [{ supplier: 'LBY', pct: 18 }, { supplier: 'AZE', pct: 16 }, { supplier: 'SAU', pct: 12 }],
+      lng:   [{ supplier: 'DZA', pct: 35 }, { supplier: 'USA', pct: 18 }, { supplier: 'QAT', pct: 14 }],
+    },
+  },
+  CAN: {
+    code: 'CAN', name: '캐나다', flagEmoji: '🇨🇦', symbolEmoji: '🍁',
+    coords: [-75.70, 45.42], lang: 'en',
+    leader: { name: '존 A. 맥도널드', title: '캐나다 초대 총리', quote: '"대륙을 잇는 길이 곧 국가다."', bgFrom: '#3A0A0A', bgTo: '#7A1A1A', image: '/characters/country_can.webp' },
+    structural: {
+      industries: ['에너지(오일샌드)', '광물', '농업', '임업'],
+      energyMaritimeDependence: '에너지 순수출국 — 원유·가스·광물·곡물 수출',
+      keyChokepoints: ['panama'],
+      hypothesisFulcrum: 'market: 원자재 수출가·대미 의존(파이프라인·항만)',
+    },
+    importMainPort: null,
+    supplyChains: {},
+  },
+  MEX: {
+    code: 'MEX', name: '멕시코', flagEmoji: '🇲🇽', symbolEmoji: '🦅',
+    coords: [-99.13, 19.43], lang: 'es',
+    leader: { name: '베니토 후아레스', title: '멕시코 개혁 대통령', quote: '"타인의 권리 존중이 곧 평화다."', bgFrom: '#0A3A1A', bgTo: '#1A6A3A', image: '/characters/country_mex.webp' },
+    structural: {
+      industries: ['제조(자동차)', '석유', '농업', '전자'],
+      energyMaritimeDependence: '원유 수출국이나 정제유(가솔린) 수입 의존',
+      keyChokepoints: ['panama'],
+      hypothesisFulcrum: 'political/market: 대미 무역(USMCA)·니어쇼어링',
+    },
+    importMainPort: [-94.4, 18.1], // Coatzacoalcos
+    supplyChains: {
+      refined: [{ supplier: 'USA', pct: 70 }],
+    },
+  },
+  BRA: {
+    code: 'BRA', name: '브라질', flagEmoji: '🇧🇷', symbolEmoji: '🌳',
+    coords: [-47.88, -15.79], lang: 'pt',
+    leader: { name: '페드루 2세', title: '브라질 제국 황제', quote: '"광대한 자원이 미래를 연다."', bgFrom: '#0A3A1A', bgTo: '#2A7A1A', image: '/characters/country_bra.webp' },
+    structural: {
+      industries: ['철광석', '대두·곡물', '원유', '항공기'],
+      energyMaritimeDependence: '원유·철광석·대두 수출국(중국 수요 의존)',
+      keyChokepoints: ['panama', 'suez'],
+      hypothesisFulcrum: 'market: 원자재 수출가·중국 수요',
+    },
+    importMainPort: null,
+    supplyChains: {},
+  },
+  IDN: {
+    code: 'IDN', name: '인도네시아', flagEmoji: '🇮🇩', symbolEmoji: '🌋',
+    coords: [106.85, -6.21], lang: 'id',
+    leader: { name: '수카르노', title: '인도네시아 건국 대통령', quote: '"바다가 우리를 갈라놓지 않고 잇는다."', bgFrom: '#3A0A0A', bgTo: '#7A1A1A', image: '/characters/country_idn.webp' },
+    structural: {
+      industries: ['석탄', '니켈', '팜유', '제조'],
+      energyMaritimeDependence: '석탄·니켈 수출 거점이나 원유·정제유는 수입',
+      keyChokepoints: ['malacca'],
+      hypothesisFulcrum: 'geopolitics/market: 말라카 입지 + 니켈·석탄 수출 레버',
+    },
+    importMainPort: [106.9, -6.1],
+    supplyChains: {
+      crude: [{ supplier: 'SAU', pct: 30 }, { supplier: 'NGA', pct: 15 }],
+    },
+  },
+  TUR: {
+    code: 'TUR', name: '튀르키예', flagEmoji: '🇹🇷', symbolEmoji: '🌙',
+    coords: [32.85, 39.93], lang: 'tr',
+    leader: { name: '무스타파 케말 아타튀르크', title: '튀르키예 공화국 건국자', quote: '"해협을 쥔 자가 두 대륙을 잇는다."', bgFrom: '#3A0A0A', bgTo: '#7A1212', image: '/characters/country_tur.webp' },
+    structural: {
+      industries: ['제조·자동차', '섬유', '건설', '방산'],
+      energyMaritimeDependence: '에너지 수입 의존 + 보스포루스·다르다넬스 해협 통제',
+      keyChokepoints: ['suez', 'bab_el_mandeb'],
+      hypothesisFulcrum: 'geopolitics: 에너지 수입 + 해협 통제·지역 강국 레버',
+    },
+    importMainPort: [29.9, 40.7], // Izmit
+    supplyChains: {
+      crude: [{ supplier: 'RUS', pct: 30 }, { supplier: 'IRQ', pct: 20 }, { supplier: 'SAU', pct: 10 }],
+      lng:   [{ supplier: 'RUS', pct: 25 }, { supplier: 'USA', pct: 18 }, { supplier: 'DZA', pct: 14 }],
+    },
+  },
+  ARG: {
+    code: 'ARG', name: '아르헨티나', flagEmoji: '🇦🇷', symbolEmoji: '☀️',
+    coords: [-58.38, -34.60], lang: 'es',
+    leader: { name: '호세 데 산마르틴', title: '남미 독립 해방자', quote: '"자유는 바다 건너에서도 지켜져야 한다."', bgFrom: '#0A2A4A', bgTo: '#2A5A8A', image: '/characters/country_arg.webp' },
+    structural: {
+      industries: ['농업(대두·곡물)', '에너지(Vaca Muerta 셰일)', '광업'],
+      energyMaritimeDependence: '곡물·셰일 수출 잠재력이나 정제유·가스 수입 변동',
+      keyChokepoints: ['panama', 'suez'],
+      hypothesisFulcrum: 'market: 인플레·환율·곡물 수출 사이클',
+    },
+    importMainPort: null,
+    supplyChains: {},
+  },
+  ZAF: {
+    code: 'ZAF', name: '남아프리카공화국', flagEmoji: '🇿🇦', symbolEmoji: '💎',
+    coords: [28.19, -25.75], lang: 'en',
+    leader: { name: '넬슨 만델라', title: '남아공 초대 민주 대통령', quote: '"불가능해 보이던 것도 이루기 전까진 늘 그렇다."', bgFrom: '#0A3A1A', bgTo: '#1A6A3A', image: '/characters/country_zaf.webp' },
+    structural: {
+      industries: ['광업(백금·금·석탄)', '제조', '농업'],
+      energyMaritimeDependence: '석탄·광물 수출국이나 원유 수입 + 희망봉 우회 요충',
+      keyChokepoints: ['bab_el_mandeb', 'suez'],
+      hypothesisFulcrum: 'market/political: 광물 수출가·전력난(Eskom)',
+    },
+    importMainPort: [31.0, -29.87], // Durban
+    supplyChains: {
+      crude: [{ supplier: 'SAU', pct: 30 }, { supplier: 'NGA', pct: 20 }],
+    },
+  },
 };
 
 // 국가별 자국 언론 도메인 — Perplexity search_domain_filter로 검색을 해당국 매체로 제한.
@@ -263,6 +417,16 @@ export const MEDIA_DOMAINS = {
   AUS: ['abc.net.au', 'smh.com.au', 'theaustralian.com.au', 'afr.com'],
   IND: ['thehindu.com', 'timesofindia.indiatimes.com', 'indianexpress.com', 'economictimes.indiatimes.com'],
   RUS: ['tass.com', 'themoscowtimes.com', 'kommersant.ru', 'interfax.ru'],
+  GBR: ['bbc.com', 'theguardian.com', 'ft.com', 'telegraph.co.uk', 'reuters.com'],
+  FRA: ['lemonde.fr', 'lefigaro.fr', 'lesechos.fr', 'france24.com'],
+  ITA: ['corriere.it', 'repubblica.it', 'ilsole24ore.com', 'ansa.it'],
+  CAN: ['cbc.ca', 'theglobeandmail.com', 'nationalpost.com', 'financialpost.com'],
+  MEX: ['eluniversal.com.mx', 'milenio.com', 'jornada.com.mx', 'eleconomista.com.mx'],
+  BRA: ['globo.com', 'folha.uol.com.br', 'estadao.com.br', 'valor.globo.com'],
+  IDN: ['kompas.com', 'detik.com', 'thejakartapost.com', 'tempo.co'],
+  TUR: ['hurriyet.com.tr', 'sabah.com.tr', 'dailysabah.com', 'aa.com.tr'],
+  ARG: ['clarin.com', 'lanacion.com.ar', 'infobae.com', 'ambito.com'],
+  ZAF: ['news24.com', 'iol.co.za', 'businesslive.co.za', 'timeslive.co.za'],
 };
 
 export const COUNTRY_LIST = Object.values(COUNTRY_DATA);
