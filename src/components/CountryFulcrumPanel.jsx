@@ -176,11 +176,11 @@ export default function CountryFulcrumPanel() {
           {cd?.leader?.quote && <p className="text-[11px] text-white/60 italic mt-2">{cd.leader.quote}</p>}
         </div>
 
-        {/* 탭바 */}
-        <div className="flex-shrink-0 flex border-b border-white/10 bg-black/20 text-[11px] overflow-x-auto">
+        {/* 탭바 — 스크롤 대신 2행 줄바꿈 */}
+        <div className="flex-shrink-0 flex flex-wrap gap-y-0.5 border-b border-white/10 bg-black/20 text-[11px]">
           {[{ k: 'fulcrum', l: '⚖ Fulcrum' }, ...CONSTRAINTS.map(c => ({ k: c.key, l: c.emoji + ' ' + c.label })), { k: 'energy', l: '⚡ 에너지' }, { k: 'routes', l: '🛢️ 공급루트' }].map(t => (
             <button key={t.k} onClick={() => setTab(t.k)}
-              className={`px-3 py-2 whitespace-nowrap transition-colors ${tab === t.k ? 'text-white border-b-2 border-purple-400 bg-white/5' : 'text-white/50 hover:text-white/80'}`}>{t.l}</button>
+              className={`px-2.5 py-1.5 whitespace-nowrap rounded transition-colors ${tab === t.k ? 'text-white bg-purple-500/25 border border-purple-400/50' : 'text-white/50 hover:text-white/80'}`}>{t.l}</button>
           ))}
         </div>
 

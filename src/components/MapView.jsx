@@ -40,7 +40,7 @@ export default function MapView() {
   const countryMarkersRef = useRef(null);
   const supplyRouteRef = useRef(null);
   const { setSelectedShip, selectedShip, selectedRegion, mapCenter, mapZoom, mapFilters, shipTrack,
-    showCountryLayer, activeSupplyRoute } = useStore();
+    showCountryLayer, activeSupplyRoute, feedCollapsed } = useStore();
   const [activeStyle, setActiveStyle] = useState('dark');
   const [mapError, setMapError] = useState(false);
 
@@ -214,6 +214,14 @@ export default function MapView() {
       if (currentTrackPoints) map.getSource('ship-track-points')?.setData(currentTrackPoints);
     });
   }, [activeStyle]);
+
+  // 피드 접기/펼치기로 지도 컨테이너 폭이 바뀌면 Mapbox 캔버스를 새 폭에 맞춰 다시 그린다.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const t = setTimeout(() => { try { map.resize(); } catch { /* ignore */ } }, 80);
+    return () => clearTimeout(t);
+  }, [feedCollapsed]);
 
   // 🌐 지정학 모드: 국가 포인트 레이어 토글
   useEffect(() => {

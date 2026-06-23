@@ -53,6 +53,8 @@ const useStore = create((set) => ({
     timeRange: '24h',
   },
   feedTab: 'all', // 활성 카테고리 탭 (FeedTabs.jsx의 TABS id)
+  feedCollapsed: false, // 데스크톱에서 커맨드 피드 접기(지도 넓게 보기)
+  toggleFeed: () => set((state) => ({ feedCollapsed: !state.feedCollapsed })),
   addReport: (report) =>
     set((state) => {
       // id 중복 무시 (초기 로드 + Realtime + StrictMode 이중 마운트로 같은 보고가 중복 추가되는 것 방지)

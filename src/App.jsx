@@ -18,7 +18,7 @@ import useStore from './store/useStore.js';
 const INTRO_SEEN_KEY = 'seabird_intro_seen_v1';
 
 export default function App() {
-  const { selectedShip, selectedRegion, selectedCountry, showXCapital, openIntro, openDeck, openSlides } = useStore();
+  const { selectedShip, selectedRegion, selectedCountry, showXCapital, openIntro, openDeck, openSlides, feedCollapsed, toggleFeed } = useStore();
 
   // 첫 방문 시 인트로 1회 자동 노출. (지역 디폴트 선택 없음 — 한·일이 보이는 전체 뷰로 시작)
   // /소개(또는 /deck) 경로로 접속하면 발표자료 뷰어를, /발표(또는 /slides) 경로면 슬라이드 뷰어를 자동으로 연다(공유 링크용).
@@ -50,6 +50,16 @@ export default function App() {
           {selectedShip && <ShipDetailPanel />}
           {selectedRegion && <RegionIntelPanel />}
           {selectedCountry && <CountryFulcrumPanel />}
+          {/* 커맨드 피드 접기/펼치기 (데스크톱) — 지도를 넓게 */}
+          <button
+            onClick={toggleFeed}
+            aria-label={feedCollapsed ? '피드 펼치기' : '피드 접기'}
+            title={feedCollapsed ? '커맨드 피드 펼치기' : '커맨드 피드 접기'}
+            className="hidden md:flex items-center gap-1 absolute top-3 right-3 z-20 px-2 py-1.5 rounded-lg border border-sea-border bg-sea-panel/90 backdrop-blur text-sea-muted hover:text-white hover:border-white/40 transition-colors text-xs font-mono"
+          >
+            <span>{feedCollapsed ? '◀' : '▶'}</span>
+            <span>{feedCollapsed ? '피드' : ''}</span>
+          </button>
         </div>
         <CommandFeed />
       </div>

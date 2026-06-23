@@ -1,7 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import useStore from '../store/useStore.js';
-
-const GUIDE_SEEN_KEY = 'seabird_guide_seen_v1';
 
 const STATUS_CONFIG = {
   CONNECTED:    { dot: 'bg-green-400', label: 'LIVE' },
@@ -29,17 +27,8 @@ function CpChip({ cpId, changePct, severity }) {
 }
 
 export default function StatusBar() {
-  const { wsStatus, shipCount, reports, toggleXCapital, openIntro, toggleDeck, openGuide, toggleCountryLayer, showCountryLayer } = useStore();
+  const { wsStatus, shipCount, reports, toggleXCapital, toggleCountryLayer, showCountryLayer } = useStore();
   const { dot, label } = STATUS_CONFIG[wsStatus] ?? STATUS_CONFIG.DISCONNECTED;
-
-  // 첫 방문엔 가이드 버튼이 통통 튀어 가시성 확보 → 한 번 누르면 멈춤(localStorage)
-  const [guideSeen, setGuideSeen] = useState(() => {
-    try { return !!localStorage.getItem(GUIDE_SEEN_KEY); } catch { return true; }
-  });
-  const startGuide = () => {
-    if (!guideSeen) { try { localStorage.setItem(GUIDE_SEEN_KEY, '1'); } catch { /* ignore */ } setGuideSeen(true); }
-    openGuide();
-  };
 
   // 초크포인트별 최신 보고에서 비교 수치 추출
   const cpComparisons = useMemo(() => {
@@ -64,22 +53,6 @@ export default function StatusBar() {
           <span className="text-sea-muted shrink-0">
             <span className="text-white">{shipCount.toLocaleString()}</span><span className="hidden sm:inline"> vessels</span>
           </span>
-          <button
-            onClick={openIntro}
-            aria-label="인트로"
-            className="flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1 rounded border border-sea-border hover:border-blue-500/60 hover:bg-blue-900/20 text-sea-muted hover:text-blue-400 transition-colors"
-          >
-            <span>📜</span>
-            <span className="hidden sm:inline">인트로</span>
-          </button>
-          <button
-            onClick={toggleDeck}
-            aria-label="소개"
-            className="flex items-center gap-1.5 px-2 py-1.5 sm:px-2.5 sm:py-1 rounded border border-sea-border hover:border-blue-500/60 hover:bg-blue-900/20 text-sea-muted hover:text-blue-400 transition-colors"
-          >
-            <span>📄</span>
-            <span className="hidden sm:inline">소개</span>
-          </button>
           <button
             disabled
             aria-label="통계 (준비 중)"
@@ -106,19 +79,6 @@ export default function StatusBar() {
           >
             <span>🌐</span>
             <span className="hidden sm:inline">지정학</span>
-          </button>
-          <button
-            onClick={startGuide}
-            aria-label="가이드"
-            title="사용 가이드"
-            className={`w-7 h-7 sm:w-auto sm:px-2.5 sm:py-1 flex items-center justify-center sm:gap-1.5 rounded border transition-colors ${
-              guideSeen
-                ? 'border-sea-border text-sea-muted hover:border-blue-500/60 hover:text-blue-400'
-                : 'border-amber-400/70 text-amber-300 animate-bounce'
-            }`}
-          >
-            <span>❔</span>
-            <span className="hidden sm:inline">가이드</span>
           </button>
           <div className="flex items-center gap-1.5 shrink-0">
             <span className={`w-2 h-2 rounded-full ${dot}`} />

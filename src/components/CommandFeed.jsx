@@ -13,7 +13,7 @@ const TIME_MS = { '1h': 3600000, '6h': 21600000, '24h': 86400000, '7d': 60480000
 export default function CommandFeed() {
   useAgentReports();
 
-  const { reports, feedFilters, feedTab, mobileView } = useStore();
+  const { reports, feedFilters, feedTab, mobileView, feedCollapsed } = useStore();
   const [selectedReport, setSelectedReport] = useState(null);
 
   // 1) 공통 필터(심각도·기간)만 먼저 적용 — 탭 건수 배지가 같은 기준을 공유하도록
@@ -42,7 +42,7 @@ export default function CommandFeed() {
   );
 
   return (
-    <aside data-tour="feed" className={`${mobileView === 'feed' ? 'absolute inset-0 z-30 flex' : 'hidden'} md:static md:z-auto md:flex w-full md:w-80 lg:w-96 h-full flex-col border-l border-sea-border bg-sea-panel`}>
+    <aside data-tour="feed" className={`${mobileView === 'feed' ? 'absolute inset-0 z-30 flex' : 'hidden'} h-full flex-col border-l border-sea-border bg-sea-panel w-full md:w-80 lg:w-96 ${feedCollapsed ? 'md:hidden' : 'md:static md:z-auto md:flex'}`}>
       {/* 피드 헤더 */}
       <div className="px-4 py-3 border-b border-sea-border shrink-0">
         <div className="flex items-center justify-between">
