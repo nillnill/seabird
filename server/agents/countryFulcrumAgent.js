@@ -4,7 +4,7 @@
 const { createClient } = require('@supabase/supabase-js');
 const fetch = require('node-fetch');
 const { callClaude } = require('./claudeClient');
-const { fetchCountry } = require('../data/sources/worldBank');
+const { resolveIndicators } = require('../data/sources/resolveIndicators');
 const { buildRoutes } = require('./supplyRoutes');
 const { COUNTRY_DATA, MEDIA_DOMAINS } = require('../data/countryData');
 
@@ -20,6 +20,7 @@ const SYSTEM_PROMPT = `You are COUNTRY FULCRUM ANALYST. 프레임워크: Marko P
 - 4제약: political(정치·정치경제: 주요 산업·고용·실업률·여소야대 등 정치환경·정상 성향/지지율·핵심 정책), market(거시·금융시장: 성장·물가·무역의존·경상수지·원자재 노출), geopolitics(지정학: 해상 에너지·교역 의존·핵심 초크포인트·동맹/제재), legal(헌법·법률: 정부형태·법치·규제·조약).
 - 각 제약은 **3~5개 핵심 사실**로 간결히(과다 나열 금지). fact 문장은 한 줄.
 - ⚠️ **최신성**: political·geopolitics의 시사 사실은 local_intel의 **최근 7~30일** 사안만 쓰고, fact 끝에 날짜를 적고 as_of에 그 날짜(YYYY-MM 또는 YYYY-MM-DD)를 넣어라. 30일보다 오래된 시사는 제외(구조적 사실·공식지표는 무관). 최신 사안이 부족하면 그 도메인 사실 수를 줄여라.
+- ⚠️ **출처 정확성(중요)**: 수치 사실의 source·as_of는 입력 official_indicators의 해당 항목 값을 **그대로** 인용하라. 예: official_indicators에 gdp_growth가 source='IMF', as_of='2026-12-31'이면 그 fact의 source='IMF', as_of='2026-12-31'로. 임의로 'WorldBank'나 과거 연도를 적지 마라. value도 주어진 값을 그대로 쓴다.
 - 넷 어세스먼트: 어느 제약이 지금 가장 구속력 있는가(fulcrum_constraint) + 한 문단 근거(fulcrum_summary) + 방향(tightening|loosening|stable) + 이 fulcrum을 움직이는 라이브 데이터 스트림 목록(maritime_streams: 감시할 초크포인트·원자재가격·통항 등).
 - 정성 사실은 정직하게(추정/현지보도 출처 명시). 과장 금지.
 
@@ -29,7 +30,7 @@ Respond ONLY with valid JSON. Language: Korean.
   "fulcrum_summary": "넷 어세스먼트 근거 한 문단",
   "fulcrum_direction": "tightening|loosening|stable",
   "constraints": {
-    "political":   [{"fact":"...","value":2.7,"unit":"%","source":"WorldBank","as_of":"2025"}],
+    "political":   [{"fact":"...","value":2.7,"unit":"%","source":"<official_indicators의 source 그대로>","as_of":"<그대로>"}],
     "market":      [{"fact":"...","source":"..."}],
     "geopolitics": [{"fact":"...","source":"..."}],
     "legal":       [{"fact":"...","source":"..."}]
@@ -73,13 +74,17 @@ async function fetchLocalIntel(country) {
 }
 
 // 원자 지표 upsert (country_indicators) — 재사용/2·3차 가공 기반
-async function saveIndicators(db, code, wbRows) {
-  if (!wbRows.length) return;
-  const rows = wbRows.map(r => ({
-    country_code: code, domain: r.domain, metric_key: r.metric_key,
-    value: r.value, unit: r.unit, source: r.source, as_of: r.as_of,
-  }));
-  await db.from('country_indicators').upsert(rows, { onConflict: 'country_code,domain,metric_key,as_of' }).then(({ error }) => {
+async function saveIndicators(db, code, candidates) {
+  if (!candidates?.length) return;
+  // 유니크 키(country,domain,metric_key,as_of) 기준 배치 내 중복 제거(같은 키 충돌 방지) — source는 마지막 것 유지
+  const dedup = {};
+  for (const r of candidates) {
+    dedup[`${r.domain}|${r.metric_key}|${r.as_of}`] = {
+      country_code: code, domain: r.domain, metric_key: r.metric_key,
+      value: r.value, unit: r.unit, source: r.source, as_of: r.as_of,
+    };
+  }
+  await db.from('country_indicators').upsert(Object.values(dedup), { onConflict: 'country_code,domain,metric_key,as_of' }).then(({ error }) => {
     if (error) console.warn('[COUNTRY_FULCRUM] indicators upsert:', error.message);
   });
 }
@@ -87,8 +92,9 @@ async function saveIndicators(db, code, wbRows) {
 async function runOne(code, db) {
   const country = COUNTRY_DATA[code];
   if (!country) return false;
-  const wb = await fetchCountry(code).catch(() => []);
-  await saveIndicators(db, code, wb);
+  // 최신성 우선 멀티소스(OECD 월별 > IMF 2026 > WB): chosen=metric별 최신, all=전 후보(원자 저장)
+  const { chosen, all } = await resolveIndicators(code).catch(() => ({ chosen: [], all: [] }));
+  await saveIndicators(db, code, all);
   const localIntel = await fetchLocalIntel(country);
 
   let result;
@@ -99,7 +105,7 @@ async function runOne(code, db) {
         today: new Date().toISOString().slice(0, 10),
         country: country.name, code,
         structural: country.structural,
-        official_indicators: wb.map(r => ({ domain: r.domain, key: r.metric_key, label: r.label, value: r.value, unit: r.unit, as_of: r.as_of })),
+        official_indicators: chosen.map(r => ({ domain: r.domain, key: r.metric_key, label: r.label, value: r.value, unit: r.unit, as_of: r.as_of, source: r.source })),
         local_intel: localIntel || '(현지 검색 미가용)',
       }),
       maxTokens: 5000,

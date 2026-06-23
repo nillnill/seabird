@@ -296,7 +296,7 @@ Marko Papic *Geopolitical Alpha*의 **제약(constraints) 프레임워크**: 4�
 **데이터 모델 — 원자↔합성 분리(2·3차 가공 대비)**: 원자(`country_indicators`·`country_supply_routes`·`freight_history` category='market'·기존 라이브)는 정규화·재집계 가능, 합성(`country_fulcrum`)은 표현용. 점수화 금지 — **사실 나열 + 출처 배지 + as_of**.
 
 **에이전트 전략 (L0→L1→L2)**:
-- **L0 수집**: `data/sources/worldBank.js`(무키 공식지표)·`marketScraper.js`(Yahoo 선물/ETF/주식 → freight_history market)·`supplyRoutes.js`(searoute 해상 항로 + 초크포인트 교차 → country_supply_routes). (UN Comtrade/EIA 키 있으면 % 라이브, 없으면 `countryData.supplyChains` 큐레이션 % 폴백.)
+- **L0 수집**: **거시지표는 최신성 우선 멀티소스 `data/sources/resolveIndicators.js`** — `oecd.js`(회원국 월별 CPI, 최신) → `imf.js`(IMF DataMapper, 12국 2026 추정: GDP성장·물가·실업·경상수지·GDP) → `worldBank.js`(폴백+구조지표: 에너지의존·제조업비중·거버넌스WGI). metric별 **연도 최신 채택, 동률 시 OECD>IMF>WB**. (WB 2024가 오래된 문제 해결 — 패널은 source 배지+as_of로 신선도 노출.) + `marketScraper.js`(Yahoo 선물/ETF/주식 → freight_history market)·`supplyRoutes.js`(searoute 해상 항로 + 초크포인트 교차 → country_supply_routes). (UN Comtrade/EIA 키 있으면 % 라이브, 없으면 `countryData.supplyChains` 큐레이션 % 폴백.)
 - **L1 합성**: `countryFulcrumAgent.js`(주1회·Sonnet) — WB + **Perplexity 현지언어(최근 7~30일 시사)** + 라이브 종합 → 4제약 사실목록 + fulcrum·방향 → `country_fulcrum` + `country_indicators` 적재 + `buildRoutes`.
 - **L2 모니터**: `fulcrumMonitor.js`(3h·룰) — fulcrum 구동 라이브 스트림(초크포인트 통항·원유선물·운임)을 **롤링(7d/z, baselineUtils 재사용)**으로 감시 → `FULCRUM_MONITOR` 경보 + `fulcrum_direction` 갱신. (MASTER·X CAPITAL 프롬프트 연동은 후속.)
 
