@@ -375,6 +375,18 @@ let aisWs = null;
 let lastAisMessageAt = 0;             // 마지막 AIS 메시지 수신 시각
 const AIS_STALE_MS = 60 * 1000;       // 60초간 무수신이면 좀비(half-open) 소켓으로 간주
 const AIS_WATCHDOG_INTERVAL_MS = 20 * 1000;
+// 재연결 지수 백오프 — 429(Too Many Requests)·연결 거부 시 고정 5초로 두드리면 rate limit이 안 풀린다.
+// 실패할수록 간격을 늘리고(최대 60초), 정상 메시지를 받으면 5초로 리셋.
+const AIS_BACKOFF_MIN_MS = 5 * 1000;
+const AIS_BACKOFF_MAX_MS = 60 * 1000;
+let aisBackoffMs = AIS_BACKOFF_MIN_MS;
+let aisReconnectTimer = null;
+function scheduleAisReconnect() {
+  if (aisReconnectTimer) return;      // 중복 예약 방지(error+close 동시 발생 등)
+  console.log(`[AIS] reconnecting in ${Math.round(aisBackoffMs / 1000)}s`);
+  aisReconnectTimer = setTimeout(() => { aisReconnectTimer = null; connectAIS(); }, aisBackoffMs);
+  aisBackoffMs = Math.min(aisBackoffMs * 2, AIS_BACKOFF_MAX_MS); // 다음 실패는 더 길게
+}
 
 function connectAIS() {
   console.log('[AIS] connecting to aisstream.io...');
@@ -394,6 +406,7 @@ function connectAIS() {
 
   aisWs.on('message', (data) => {
     lastAisMessageAt = Date.now();
+    if (aisBackoffMs !== AIS_BACKOFF_MIN_MS) aisBackoffMs = AIS_BACKOFF_MIN_MS; // 정상 수신 → 백오프 리셋
     const raw = data.toString();
     // 브라우저 relay는 더 이상 메시지마다 보내지 않음 — applyShipUpdate가 relayDirty에 모아
     // 2초마다 압축 스냅샷 1건으로 묶어 전송(아래 relay flush). raw firehose를 그대로
@@ -433,11 +446,11 @@ function connectAIS() {
     }
   });
 
-  aisWs.on('error', (err) => console.error('[AIS] error:', err.message));
+  aisWs.on('error', (err) => console.error('[AIS] error:', err.message)); // 'close'가 뒤따르며 백오프 재연결
 
   aisWs.on('close', () => {
-    console.log('[AIS] disconnected — reconnecting in 5s');
-    setTimeout(connectAIS, 5000);
+    console.log('[AIS] disconnected');
+    scheduleAisReconnect();           // 지수 백오프(429 등 연결 거부 시 점점 길게)
   });
 }
 
